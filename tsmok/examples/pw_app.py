@@ -15,32 +15,35 @@ import tsmok.pigweed.image_elf_pw as image_elf_pw
 
 
 # Run ROM
-def run(cmd_args):
+def main(args):
   """Runs PW emulation.
 
   Args:
-    cmd_args: Arguments from command line
+    args: Arguments from command line
 
   Returns:
     0, if no error, -1 otherwise
   """
+  log_level = None
+  log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s'
+  if not args.verbose:
+    log_fmt = '| %(name)-32s| %(levelname)-16s| %(message)s'
+    log_level = logging.ERROR
+  elif args.verbose == 1:
+    log_level = logging.INFO
+  elif args.verbose == 2:
+    log_level = logging.DEBUG
+  else:
+    log_level = arm.ArmEmu.LOG_DEBUG_DISASM
+
+  logging.basicConfig(format=log_fmt, level=logging.NOTSET)
   log = logging.getLogger('[MAIN]')
+  log.setLevel(log_level)
 
   log.info('Run PW emulator')
 
   try:
-
-    img = image_elf_pw.PwElfImage(cmd_args.binary)
-
-    if not cmd_args.verbose:
-      log_level = logging.ERROR
-    elif cmd_args.verbose == 1:
-      log_level = logging.INFO
-    elif cmd_args.verbose == 2:
-      log_level = logging.DEBUG
-    else:
-      log_level = arm.ArmEmu.LOG_DEBUG_DISASM
-
+    img = image_elf_pw.PwElfImage(args.binary)
     pw = pw_arm.PwArmEmu(log_level=log_level)
     pw.load(img)
 
@@ -50,7 +53,7 @@ def run(cmd_args):
     pw.driver_add(stm_devices.Uart(stm_regs.UartBaseReg.USART1,
                                    log_level=log_level))
 
-    if cmd_args.coverage:
+    if args.coverage:
       cov = cov_drcov.DrCov(log_level=logging.DEBUG)
       cov.add_module(pw.image.name, pw.image.text_start, pw.image.text_end,
                      pw.image.sha256)
@@ -59,49 +62,29 @@ def run(cmd_args):
 
     pw.run()
 
-    if cmd_args.coverage:
+    if args.coverage:
       collector.stop()
-      cmd_args.coverage.write(cov.dump())
+      args.coverage.write(cov.dump())
+    return 0
 
   except error.Error as e:
     log.error(e)
+    return -1
 
 
 def parse_args():
   """Parses command line arguments."""
 
   ag = argparse.ArgumentParser(description='PIGWEED Emulator')
-  ag.add_argument(
-      '--verbose', '-v', action='count', help='Increase output verbosity')
-  ag.add_argument(
-      '--binary', '-b',
-      type=argparse.FileType('rb'),
-      required=True,
-      help='PW binary to run')
-  ag.add_argument(
-      '--coverage', '-c',
-      type=argparse.FileType('wb'),
-      required=False, default=None,
-      help='coverage file')
+  ag.add_argument('--verbose', '-v', action='count',
+                  help='Increase output verbosity')
+  ag.add_argument('--binary', '-b', type=argparse.FileType('rb'),
+                  required=True, help='PW binary to run')
+  ag.add_argument('--coverage', '-c', type=argparse.FileType('wb'),
+                  required=False, default=None, help='coverage file')
 
   return ag.parse_args()
 
 
-def main():
-  args = parse_args()
-  if not args.verbose:
-    logging.basicConfig(
-        format='| %(name)-32s| %(levelname)-16s| %(message)s',
-        level=logging.NOTSET)
-    logging.root.setLevel(logging.INFO)
-  else:
-    logging.basicConfig(
-        format='| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s',
-        level=logging.NOTSET)
-    logging.root.setLevel(logging.DEBUG)
-
-  run(args)
-
-
 if __name__ == '__main__':
-  sys.exit(main())
+  sys.exit(main(parse_args()))
