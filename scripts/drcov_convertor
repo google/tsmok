@@ -18,53 +18,69 @@ import tsmok.coverage.dwarf_representation as dwarf_representation
 
 
 # Run ROM
-def run(cmd_args, log_level):
+def main(args):
   """Runs convertor.
 
   Args:
-    cmd_args: Arguments from command line
-    log_level: logging level
+    args: Arguments from command line
 
-  Raises:
-    error.Error: if failed with error
+  Returns:
+    0, if no error, -1 otherwise
   """
 
+  log_level = None
+  log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-7s| %(message)s'
+  if not args.verbose:
+    log_fmt = '| %(name)-32s| %(levelname)-7s| %(message)s'
+    log_level = logging.ERROR
+  elif args.verbose == 1:
+    log_level = logging.INFO
+  else:
+    log_level = logging.DEBUG
+
+  logging.basicConfig(format=log_fmt, level=logging.NOTSET)
   log = logging.getLogger('[MAIN]')
+  log.setLevel(log_level)
 
   try:
     rep = dwarf_representation.DwarfRepresentation(log_level=log_level)
-    rep.load_source(cmd_args.binary)
+    rep.load_source(args.binary)
   except error.Error as e:
     log.debug('DWARF is not supported: %s.\n Use DISASM.', e.message)
     rep = disasm_representation.DisAsmRepresentation(log_level=log_level)
-    rep.load_source(cmd_args.binary)
+    rep.load_source(args.binary)
 
-  if cmd_args.drcov:
-    log.info('Exporting coverage from %s ...', cmd_args.drcov.name)
-    cov = drcov.DrCov()
-    cov.load(cmd_args.drcov.read())
-    cov.export(rep)
-  elif cmd_args.coverage_dir:
-    for _, _, filenames in os.walk(cmd_args.coverage_dir):
-      for file in filenames:
-        log.info('Exporting coverage from %s ...', file)
-        with open(cmd_args.coverage_dir + '/' + file, 'rb') as f:
-          cov = drcov.DrCov()
-          cov.load(f.read())
-          cov.export(rep)
-  else:
-    raise error.Error('Wrong argument list')
+  try:
+    if args.drcov:
+      log.info('Exporting coverage from %s ...', args.drcov.name)
+      cov = drcov.DrCov()
+      cov.load(args.drcov.read())
+      cov.export(rep)
+    elif args.coverage_dir:
+      for _, _, filenames in os.walk(args.coverage_dir):
+        for file in filenames:
+          log.info('Exporting coverage from %s ...', file)
+          with open(args.coverage_dir + '/' + file, 'rb') as f:
+            cov = drcov.DrCov()
+            cov.load(f.read())
+            cov.export(rep)
+    else:
+      raise error.Error('Wrong argument list')
 
-  if cmd_args.type == 'gcov':
-    convertor = drcov_convertor.GcovConvertor(rep, log_level=log_level)
-  elif cmd_args.type == 'lcov':
-    convertor = drcov_convertor.LcovConvertor(rep, log_level=log_level)
-  elif cmd_args.type == 'simple':
-    convertor = drcov_convertor.BriefTxtConvertor(rep, log_level=log_level)
-  else:
-    raise error.Error('Unsupported format')
+    if args.type == 'gcov':
+      convertor = drcov_convertor.GcovConvertor(rep, log_level=log_level)
+    elif args.type == 'lcov':
+      convertor = drcov_convertor.LcovConvertor(rep, log_level=log_level)
+    elif args.type == 'simple':
+      convertor = drcov_convertor.BriefTxtConvertor(rep, log_level=log_level)
+    else:
+      raise error.Error('Unsupported format')
 
-  convertor.dump(cmd_args.output)
+    convertor.dump(args.output)
+    return 0
+  except error.Error as e:
+    log.error(e.message)
+    return -1
 
 
 class ReadableDir(argparse.Action):
@@ -111,28 +127,5 @@ def parse_args():
   return ag.parse_args()
 
 
-def main():
-  args = parse_args()
-
-  log_level = None
-  log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-7s| %(message)s'
-  if not args.verbose:
-    log_fmt = '| %(name)-32s| %(levelname)-7s| %(message)s'
-    log_level = logging.ERROR
-  elif args.verbose == 1:
-    log_level = logging.INFO
-  else:
-    log_level = logging.DEBUG
-
-  logging.basicConfig(format=log_fmt, level=logging.NOTSET)
-  log = logging.getLogger('[MAIN]')
-  log.setLevel(log_level)
-
-  try:
-    run(args, log_level)
-  except error.Error as e:
-    log.error(e.message)
-
-
 if __name__ == '__main__':
-  sys.exit(main())
+  sys.exit(main(parse_args()))
