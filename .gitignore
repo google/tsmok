@@ -2,3 +2,7 @@
 **/*.pyc
 **/*.py.swp
 **/*.swp
+build
+dist
+tsmok.egg-info/
+.eggs
