@@ -27,7 +27,7 @@ class Ahb1(hw_base.DeviceBase):
 
   def write_enable_reg(self, emu, addr, size, value):
     r = regs.RccReg(addr)
-    self.log.info('Set %s to 0x%08x', r, value)
+    self.log.debug('Set %s to 0x%08x', r, value)
     self._regs[r] = value
 
   def register(self, emu):

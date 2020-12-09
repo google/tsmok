@@ -44,7 +44,7 @@ def main(args):
 
   try:
     img = image_elf_pw.PwElfImage(args.binary)
-    pw = pw_arm.PwArmEmu(log_level=log_level)
+    pw = pw_arm.PwArmV7mEmu(log_level=log_level)
     pw.load(img)
 
     pw.driver_add(stm_devices.Ahb1(log_level=log_level))
