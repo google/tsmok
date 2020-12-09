@@ -25,6 +25,11 @@ else:
   import unicorn.unicorn_const as unicorn_const  # pylint: disable=g-import-not-at-top
 
 
+class ArmMode(enum.Enum):
+  GENERIC = 0,
+  M4CLASS = 1
+
+
 class ArmEmu:
   """Implimentation of base ARM Emulator."""
 
@@ -58,7 +63,7 @@ class ArmEmu:
     VIRQ = 14
     VFIQ = 15
 
-  def __init__(self, name, log_level=logging.ERROR):
+  def __init__(self, name, log_level=logging.ERROR, mode=ArmMode.GENERIC):
 
     logging.addLevelName(self.LOG_DEBUG_DISASM, 'DEBUG_DISASM')
     logging.addLevelName(self.LOG_DEBUG_MEM, 'DEBUG_MEM')
@@ -68,8 +73,13 @@ class ArmEmu:
     self._log.setLevel(log_level)
     self._log_level = log_level
 
+    if mode == ArmMode.GENERIC:
+      uc_mode = unicorn.UC_MODE_ARM
+    elif mode == ArmMode.M4CLASS:
+      uc_mode = unicorn.UC_MODE_THUMB | unicorn.UC_MODE_M4CLASS
+
     # Initialize emulator in ARM mode
-    self._uc = unicorn.Uc(unicorn.UC_ARCH_ARM, unicorn.UC_MODE_ARM)
+    self._uc = unicorn.Uc(unicorn.UC_ARCH_ARM, uc_mode)
     self._ret0 = 0
     self._stack_ptr = 0
     self._stack_size = 0
@@ -78,7 +88,8 @@ class ArmEmu:
 
     # Initialize disasm
     self._cs_arm = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
-    self._cs_thumb = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    self._cs_thumb = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB |
+                                 capstone.CS_MODE_MCLASS)
 
     self._func_stack = []
     self.image = None
@@ -162,7 +173,7 @@ class ArmEmu:
     del uc, udata  # unused by the hook
     exc = self.ExceptionType(exc_idx)
     pc = self.get_current_address()
-    self._log.info('0x%08x: interrupted by EXCEPTION %s', pc, exc)
+    self._log.debug('0x%08x: interrupted by EXCEPTION %s', pc, exc)
 
     if exc in self.exception_handler:
       regs = self.get_regs()
@@ -515,21 +526,32 @@ class ArmEmu:
   def _get_disasm_str(self, addr: int) -> str:
     s = ''
     if addr in self._disasm_map:
-      address, mnemonic, op_str = self._disasm_map[addr]
+      address, mnemonic, op_str, _ = self._disasm_map[addr]
       s = '0x{:08x}:  {:8s}    {}'.format(address, mnemonic, op_str)
 
     return s
 
   def _disasm_instruction(self, addr: int, size: int):
-    data = self._uc.mem_read(addr, size)
+    """Disassembles chunk of memeory to instruction.
 
-    if self._uc.query(unicorn.UC_QUERY_MODE) == unicorn.UC_MODE_ARM:
-      cs = self._cs_arm
-    elif self._uc.query(unicorn.UC_QUERY_MODE) == unicorn.UC_MODE_THUMB:
+    Args:
+      addr: address of memory
+      size: size of memory
+    """
+
+    cs = None
+    if addr & 0x1:  # THUMB mode
       cs = self._cs_thumb
+    else:
+      if self._uc.query(unicorn.UC_QUERY_MODE) & unicorn.UC_MODE_THUMB:
+        cs = self._cs_thumb
+      else:
+        cs = self._cs_arm
+
+    data = self._uc.mem_read(addr & ~0x1, size)
 
     for (address, size, mnemonic, op_str) in cs.disasm_lite(bytes(data), addr):
-      self._disasm_map[address] = (address, mnemonic, op_str)
+      self._disasm_map[address] = (address, mnemonic, op_str, size)
 
   def _instruction_examination(self, addr: int, size: int):
     """Examines an instruction.
@@ -555,7 +577,7 @@ class ArmEmu:
     instr_str = self._get_disasm_str(addr)
     self._log.log(self.LOG_DEBUG_DISASM, '\t\t\t %s', instr_str)
 
-    addr, mnemonic, op_str = self._disasm_map[addr]
+    addr, mnemonic, op_str, _ = self._disasm_map[addr]
     if self._func_return_instruction(mnemonic, op_str):
       info |= self.InstrInfo.RET
 
@@ -601,6 +623,34 @@ class ArmEmu:
 
   def get_stack_pointer(self) -> int:
     return self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SP)
+
+  def get_instruction_at_address(self, address: int, size: int = 0):
+    """Returns an instruction from memory address.
+
+    Args:
+      address: address of memory
+      size: size of memory
+
+    Returns:
+      Address, mnemonic, operators and size as tuble
+
+    Raises:
+      Error exception if size is not match the size of single
+      instruction at specifed address
+
+    """
+    if (address & ~0x1) not in self._disasm_map:
+      self._disasm_instruction(address, size if size else 4)
+
+    if (address & ~0x1) not in self._disasm_map:
+      raise error.Error(f'Failed to get instruction info at 0x{address:08x}')
+
+    addr, mnemonic, op_str, sz = self._disasm_map[address & ~0x1]
+    if size and size != sz:
+      raise error.Error('Requested size does not match instruction size: '
+                        f'{size} != {sz}. More than one instcruction '
+                        'are there.')
+    return addr, mnemonic, op_str, sz
 
   def set_return_address(self, addr: int) -> None:
     return self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, addr)
