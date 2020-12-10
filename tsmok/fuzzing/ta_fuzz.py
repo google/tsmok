@@ -9,6 +9,8 @@ import struct
 
 import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
+import tsmok.coverage.collectors as cov_collectors
+import tsmok.coverage.drcov as cov_drcov
 # WORKAROUND: use unicornafl module only for fuzzing because it is
 # not as stable as upstream unicorn module. emu.config should be before
 # emu.arm or emu.ta_arm modules
@@ -82,6 +84,11 @@ class TaFuzzer:
     img = image_elf_ta.TaElfImage(img_file)
     self.ta.load(img)
 
+    cov = cov_drcov.DrCov(log_level=log_level)
+    cov.add_module(img.name, img.text_start, img.text_end)
+    self.coverage_collector = cov_collectors.BlockCollector(
+        cov, log_level=log_level)
+
   def _setup_int_param(self, param, data):
     sz = struct.calcsize(self.PARAM_INT_FMT)
     if len(data) < sz:
@@ -104,13 +111,28 @@ class TaFuzzer:
     del param, data  # unused in this function
     return 0
 
+  def coverage_enable(self):
+    self.ta.coverage_register(self.coverage_collector)
+
+  def coverage_disable(self):
+    self.ta.coverage_del(self.coverage_collector.name)
+
+  def coverage_dump(self):
+    return self.coverage_collector.cov.dump()
+
   def init(self, mode):
     """Starts AFL forkserver.
 
-    Args:
-      mode: fuzzing mode as defined in TaFuzzer.Mode
+    After this call all commands will be executed for each *child*
 
-    After this point all commands will be executed for each *child*
+    Args:
+      mode: fuzzing mode as defined in TaFuzzer.Mode.
+
+    Returns:
+      True, if returns from child process.
+
+    Raises:
+      Error exception in case of unknown or unsupported mode.
     """
 
     if mode != self.Mode.INVOKE_COMMAND:
@@ -122,10 +144,7 @@ class TaFuzzer:
     if mode == self.Mode.INVOKE_COMMAND:
       self.ta.open_session(self.SESSION_ID, [])
 
-    mode = self.ta.forkserver_start()
-    if mode:  # if child process
-      # disable logging to improve performance
-      logging.root.setLevel(logging.CRITICAL)
+    return self.ta.forkserver_start()
 
   def run(self, data: bytes):
     """Runs Ta emulation.
@@ -172,3 +191,6 @@ class TaFuzzer:
       ret = e.ret
 
     return ret
+
+  def stop(self):
+    self.ta.exit(0)
