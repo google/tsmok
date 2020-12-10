@@ -838,13 +838,25 @@ class ArmEmu:
         raise error.Error('Unsupported type in memory region list')
 
   def forkserver_start(self):
+    """Starts AFL fork server.
+
+    Returns:
+      True, if returns from child process
+
+    Raises:
+      Exception Error is raised in case of error.
+    """
+
     if not (hasattr(self._uc, 'afl_forkserver_start') and
             callable(getattr(self._uc, 'afl_forkserver_start'))):
       raise error.Error('afl_forkserver_start is not supported by '
                         'Unicorn Engine')
 
-    return (self._uc.afl_forkserver_start([self.image.text_end]) ==
-            unicorn_const.UC_AFL_RET_CHILD)
+    ret = self._uc.afl_forkserver_start([self.image.text_end])
+    if ret in [unicorn_const.UC_AFL_RET_ERROR,
+               unicorn_const.UC_AFL_RET_CALLED_TWICE]:
+      raise error.Error(f'afl_forkserver_start failed with error: {ret}')
+    return ret == unicorn_const.UC_AFL_RET_CHILD
 
   def call(self, entry_point: int, r0: int, r1: int, r2: int, r3: int,
            r4: int = None, r5: int = None, r6: int = None, r7: int = None
