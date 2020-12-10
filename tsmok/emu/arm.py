@@ -823,7 +823,8 @@ class ArmEmu:
   def coverage_del(self, name: str):
     self._log.info('Removing coverage engine: %s', name)
     if name in self._coverage_registered:
-      del self._coverage_register[name]
+      self._coverage_registered[name].stop()
+      del self._coverage_registered[name]
 
   def load(self, image) -> None:
     self.image = image
