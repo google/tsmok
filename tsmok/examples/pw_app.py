@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import signal
 import sys
 
 import tsmok.common.error as error
@@ -12,6 +13,12 @@ import tsmok.emu.pw_arm as pw_arm
 import tsmok.hw.stm32f429.devices as stm_devices
 import tsmok.hw.stm32f429.regs as stm_regs
 import tsmok.pigweed.image_elf_pw as image_elf_pw
+
+
+def signal_handler(emu, sig, frame):
+  del sig, frame  # not used
+  print('You pressed Ctrl+C!')
+  emu.exit(0)
 
 
 # Run ROM
@@ -25,22 +32,24 @@ def main(args):
     0, if no error, -1 otherwise
   """
   log_level = None
-  log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s'
   if not args.verbose:
-    log_fmt = '| %(name)-32s| %(levelname)-16s| %(message)s'
+    log_fmt = '| %(levelname)-7s| %(message)s'
     log_level = logging.ERROR
   elif args.verbose == 1:
+    log_fmt = '| %(levelname)-7s| %(message)s'
     log_level = logging.INFO
   elif args.verbose == 2:
+    log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s'
     log_level = logging.DEBUG
   else:
+    log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s'
     log_level = arm.ArmEmu.LOG_DEBUG_DISASM
 
   logging.basicConfig(format=log_fmt, level=logging.NOTSET)
   log = logging.getLogger('[MAIN]')
   log.setLevel(log_level)
 
-  log.info('Run PW emulator')
+  log.info('Run PIGWEED emulator')
 
   try:
     img = image_elf_pw.PwElfImage(args.binary)
@@ -55,10 +64,12 @@ def main(args):
 
     if args.coverage:
       cov = cov_drcov.DrCov(log_level=logging.DEBUG)
-      cov.add_module(pw.image.name, pw.image.text_start, pw.image.text_end,
-                     pw.image.sha256)
+      cov.add_module(pw.image.name, pw.image.text_start,
+                     pw.image.text_end)
       collector = cov_collectors.BlockCollector(cov)
       pw.coverage_register(collector)
+
+    signal.signal(signal.SIGINT, lambda s, f: signal_handler(pw, s, f))
 
     pw.run()
 
