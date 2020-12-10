@@ -7,6 +7,7 @@ import struct
 from typing import Dict
 import capstone
 import portion
+import tsmok.common.const as const
 import tsmok.common.error as error
 import tsmok.common.memory as memory
 import tsmok.common.round_up as round_up
@@ -35,10 +36,6 @@ class ArmEmu:
 
   PAGE_SIZE = 4096
 
-  LOG_DEBUG_MEM = logging.DEBUG - 1
-  LOG_DEBUG_DISASM = logging.DEBUG - 2
-  LOG_TRACE = logging.NOTSET + 1
-
   class InstrInfo(enum.Flag):
     BRANCH = enum.auto()
     RET = enum.auto()
@@ -65,9 +62,9 @@ class ArmEmu:
 
   def __init__(self, name, log_level=logging.ERROR, mode=ArmMode.GENERIC):
 
-    logging.addLevelName(self.LOG_DEBUG_DISASM, 'DEBUG_DISASM')
-    logging.addLevelName(self.LOG_DEBUG_MEM, 'DEBUG_MEM')
-    logging.addLevelName(self.LOG_TRACE, 'TRACE')
+    logging.addLevelName(const.LogLevelCustom.DEBUG_DISASM, 'DEBUG_DISASM')
+    logging.addLevelName(const.LogLevelCustom.DEBUG_MEM, 'DEBUG_MEM')
+    logging.addLevelName(const.LogLevelCustom.TRACE, 'TRACE')
 
     self._log = logging.getLogger(name)
     self._log.setLevel(log_level)
@@ -195,8 +192,9 @@ class ArmEmu:
 
     del uc, udata  # unused by the hook
     self._log.log(
-        self.LOG_TRACE, '\t\t\t\t\t\t>>> Tracing basic block at 0x%08x, '
-        'block size = 0x%08x', addr, size)
+        const.LogLevelCustom.TRACE,
+        '\t\t\t\t\t\t>>> Tracing basic block at 0x%08x, block size = 0x%08x',
+        addr, size)
     if self._log_level <= logging.DEBUG:
       self._disasm_instruction(addr, size)
 
@@ -215,7 +213,7 @@ class ArmEmu:
     """
 
     del uc, udata  # unused by the hook
-    self._log.log(self.LOG_TRACE,
+    self._log.log(const.LogLevelCustom.TRACE,
                   '\t\t\t\t\t\t>>> Code hook 0x%08x size %d SP 0x%08x', addr,
                   size, self.get_stack_pointer())
 
@@ -248,7 +246,7 @@ class ArmEmu:
     """
 
     del uc, access, value, udata  # unused by the hook
-    self._log.log(self.LOG_TRACE,
+    self._log.log(const.LogLevelCustom.TRACE,
                   '\t\t\t\t\t\t[MEM] READ at 0x%08x, size = 0x%08x', addr,
                   size)
 
@@ -278,7 +276,7 @@ class ArmEmu:
     del uc, access, udata  # unused by the hook
     pc = self.get_current_address()
     self._log.log(
-        self.LOG_DEBUG_MEM,
+        const.LogLevelCustom.DEBUG_MEM,
         '\t\t\t\t\t\t[MEM][pc 0x%08x] READ AFTER at 0x%08x, '
         'size = 0x%08x, value = 0x%08x', pc, addr, size, value)
 
@@ -299,7 +297,7 @@ class ArmEmu:
     del uc, access, udata  # unused by the hook
     pc = self.get_current_address()
     self._log.log(
-        self.LOG_DEBUG_MEM,
+        const.LogLevelCustom.DEBUG_MEM,
         '\t\t\t\t\t\t[MEM][pc 0x%08x] WRITE at 0x%08x, size = 0x%08x, '
         'value = 0x%08x', pc, addr, size, value)
 
@@ -575,7 +573,7 @@ class ArmEmu:
       return info
 
     instr_str = self._get_disasm_str(addr)
-    self._log.log(self.LOG_DEBUG_DISASM, '\t\t\t %s', instr_str)
+    self._log.log(const.LogLevelCustom.DEBUG_DISASM, '\t\t\t %s', instr_str)
 
     addr, mnemonic, op_str, _ = self._disasm_map[addr]
     if self._func_return_instruction(mnemonic, op_str):
@@ -656,14 +654,14 @@ class ArmEmu:
     return self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, addr)
 
   def mem_read(self, addr: int, size: int) -> bytearray:
-    self._log.log(self.LOG_DEBUG_MEM,
+    self._log.log(const.LogLevelCustom.DEBUG_MEM,
                   '\t\t\t\t\t\tMEM read 0x%08x - 0x%08x, size %d', addr,
                   addr + size - 1, size)
     return bytes(self._uc.mem_read(addr, size))
 
   def mem_write(self, addr: int, value: bytearray) -> None:
     end_addr = addr + len(value) - 1
-    self._log.log(self.LOG_DEBUG_MEM,
+    self._log.log(const.LogLevelCustom.DEBUG_MEM,
                   '\t\t\t\t\t\tMEM write 0x%08x - 0x%08x, size %d', addr,
                   end_addr, len(value))
     self._uc.mem_write(addr, value)

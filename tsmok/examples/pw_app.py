@@ -5,10 +5,10 @@ import logging
 import signal
 import sys
 
+import tsmok.common.const as const
 import tsmok.common.error as error
 import tsmok.coverage.collectors as cov_collectors
 import tsmok.coverage.drcov as cov_drcov
-import tsmok.emu.arm as arm
 import tsmok.emu.pw_arm as pw_arm
 import tsmok.hw.stm32f429.devices as stm_devices
 import tsmok.hw.stm32f429.regs as stm_regs
@@ -43,7 +43,7 @@ def main(args):
     log_level = logging.DEBUG
   else:
     log_fmt = '| %(funcName)32s:%(lineno)-4d| %(levelname)-16s| %(message)s'
-    log_level = arm.ArmEmu.LOG_DEBUG_DISASM
+    log_level = const.LogLevelCustom.DEBUG_DISASM
 
   logging.basicConfig(format=log_fmt, level=logging.NOTSET)
   log = logging.getLogger('[MAIN]')
