@@ -797,3 +797,30 @@ class OpteeSmcReturn(enum.IntEnum):
             ((value & OPTEE_SMC_RETURN_RPC_PREFIX_MASK) ==
              OPTEE_SMC_RETURN_RPC_PREFIX))
 
+
+class OpteeMsgRpcCmdType(enum.IntEnum):
+  """OPTEE MSG RPC command types."""
+
+  LOAD_TA = 0
+  RPMB = 1
+  FS = 2
+  GET_TIME = 3
+  WAIT_QUEUE = 4
+  SUSPEND = 5
+  SHM_ALLOC = 6
+  SHM_FREE = 7
+  SQL_FS_RESERVED = 8
+  CMD_GPROF = 9
+  SOCKET = 10
+  BENCH_REG = 20
+
+
+class OpteeMsgRpcShmType(enum.IntEnum):
+  APPL = 0  # Memory that can be shared with a non-secure user space application
+  KERNEL = 1  # Memory only shared with non-secure kernel
+
+
+class OpteeMsgRpcWaitQueueType(enum.IntEnum):
+  SLEEP = 0
+  WAKEUP = 1
+
