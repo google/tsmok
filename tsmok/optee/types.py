@@ -1,4 +1,5 @@
 """Main Optee TEE types."""
+
 import struct
 from typing import Any, List
 import uuid
@@ -77,7 +78,7 @@ class OpteeParamValue(OpteeParam):
     if t not in [
         optee_const.OpteeParamType.VALUE_INPUT,
         optee_const.OpteeParamType.VALUE_OUTPUT,
-        optee_const.OpteeParamType.VALUE_INOUT
+        optee_const.OpteeParamType.VALUE_INOUT,
     ]:
       raise ValueError(f'Wrong type: {t}')
     OpteeParam.__init__(self, t)
@@ -308,15 +309,38 @@ class OpteeMsgArg:
 
   FORMAT = '<8I'
 
-  def __init__(self, cmd):
-    self.cmd = cmd
+  def __init__(self, arg):
     self.func = 0
     self.session = 0
     self.cancel_id = 0
     self.ret = 0
     self.ret_origin = 0
     self.params = []
-    self._shm_reg = None
+    self.shm_reg = None
+
+    if isinstance(arg, int):
+      self.cmd = arg
+    elif isinstance(arg, bytes):
+      self._load(arg)
+    else:
+      raise ValueError(f'Wrong type of argument: {type(arg)}')
+
+  def _load(self, data):
+    """Loads Optee Message arguments from raw bytes data."""
+
+    sz = struct.calcsize(self.FORMAT)
+    self.cmd, self.func, self.session, self.cancel_id, _, self.ret, \
+        self.ret_origin, num = struct.unpack(self.FORMAT, data[:sz])
+
+    sz_needed = sz + struct.calcsize(OpteeMsgParam.FORMAT) * num
+    if len(data) < sz_needed:
+      raise ValueError(f'Not enough data: {len(data)} < {sz_needed}')
+
+    off = sz
+    for i in range(num):
+      param = OpteeMsgParam.create(data[off:])
+      self.params.append(param)
+      off += struct.calcsize(param.FORMAT)
 
   def size(self):
     return (struct.calcsize(self.FORMAT) +
@@ -331,12 +355,52 @@ class OpteeMsgArg:
 
     return out
 
+  def __str__(self):
+    out = 'MsgArg:\n'
+    out += f'    cmd: {self.cmd}, func: {self.func}\n'
+    out += f'    shm id {self.shm_reg}, session: {self.session}\n'
+    out += f'    cancel_id: {self.cancel_id}, ret: 0x{self.ret:08x}\n'
+    out += f'    ret_origin: 0x{self.ret_origin:08x}\n'
+
+    out += '  Params:\n'
+    for p in self.params:
+      out += '    ' + str(p) + '\n'
+
+    return out
+
 
 class OpteeMsgParam:
+  """OPTEE Message Parameters base type."""
+
   FORMAT = '<4Q'
 
   def __init__(self, attr: optee_const.OpteeMsgAttrType):
     self.attr = attr
+
+  @staticmethod
+  def create(data):
+    """Static method to create OPTEE Message parameter from raw data."""
+
+    type_map = {
+        optee_const.OpteeMsgAttrType.NONE: OpteeMsgParamNone,
+        optee_const.OpteeMsgAttrType.VALUE_INPUT: OpteeMsgParamValueInput,
+        optee_const.OpteeMsgAttrType.VALUE_OUTPUT: OpteeMsgParamValueOutput,
+        optee_const.OpteeMsgAttrType.VALUE_INOUT: OpteeMsgParamValueInOut,
+        optee_const.OpteeMsgAttrType.RMEM_INPUT: OpteeMsgParamRegMemInput,
+        optee_const.OpteeMsgAttrType.RMEM_OUTPUT: OpteeMsgParamRegMemOutput,
+        optee_const.OpteeMsgAttrType.RMEM_INOUT: OpteeMsgParamRegMemInOut,
+        optee_const.OpteeMsgAttrType.TMEM_INPUT: OpteeMsgParamTempMemInput,
+        optee_const.OpteeMsgAttrType.TMEM_OUTPUT: OpteeMsgParamTempMemOutput,
+        optee_const.OpteeMsgAttrType.TMEM_INOUT: OpteeMsgParamTempMemInOut,
+    }
+
+    sz = struct.calcsize(OpteeMsgParam.FORMAT)
+    attr, a, b, c = struct.unpack(OpteeMsgParam.FORMAT, data[:sz])
+
+    attr &= ~optee_const.OPTEE_MSG_ATTR_META
+
+    param_type = type_map[attr]
+    return param_type(a, b, c)
 
 
 class OpteeMsgParamNone(OpteeMsgParam):
@@ -346,6 +410,9 @@ class OpteeMsgParamNone(OpteeMsgParam):
 
   def __bytes__(self):
     return struct.pack(self.FORMAT, self.attr, 0, 0, 0)
+
+  def __str__(self):
+    return f'    {str(self.attr)}'
 
 
 class OpteeMsgParamValue(OpteeMsgParam):
@@ -363,6 +430,10 @@ class OpteeMsgParamValue(OpteeMsgParam):
 
   def __bytes__(self):
     return struct.pack(self.FORMAT, self.attr, self.a, self.b, self.c)
+
+  def __str__(self):
+    return (f'    {str(self.attr)}: a: 0x{self.a:08x}, b: 0x{self.b:08x},'
+            f'c: 0x{self.c:08x}')
 
 
 class OpteeMsgParamValueInput(OpteeMsgParamValue):
@@ -404,6 +475,10 @@ class OpteeMsgParamTempMem(OpteeMsgParam):
     return struct.pack(self.FORMAT, self.attr, self.buf_ptr, self.size,
                        self.shm_ref)
 
+  def __str__(self):
+    return (f'    {str(self.attr)}: ptr: 0x{self.buf_ptr:08x},'
+            f'size: 0x{self.size:08x}, shm: 0x{self.shm_ref:08x}')
+
 
 class OpteeMsgParamTempMemInput(OpteeMsgParamTempMem):
 
@@ -444,6 +519,10 @@ class OpteeMsgParamRegMem(OpteeMsgParam):
   def __bytes__(self):
     return struct.pack(self.FORMAT, self.attr, self.offset, self.size,
                        self.shm_ref)
+
+  def __str__(self):
+    return (f'    {str(self.attr)}: offset: 0x{self.offset:08x},'
+            f'size: 0x{self.size:08x}, shm: 0x{self.shm_ref:08x}')
 
 
 class OpteeMsgParamRegMemInput(OpteeMsgParamRegMem):
