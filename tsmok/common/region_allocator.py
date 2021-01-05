@@ -77,3 +77,11 @@ class RegionAllocator:
 
     self._free |= portion.closedopen(region.addr, region.addr + region.size)
     del self._allocated[rid]
+
+  def get(self, rid: int):
+    try:
+      region = self._allocated[rid]
+    except KeyError:
+      raise error.Error(f'RegionAllocator: unknown region id: {rid}')
+
+    return region
