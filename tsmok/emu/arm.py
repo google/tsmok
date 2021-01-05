@@ -1,5 +1,6 @@
 """Module for base ARM emulator."""
 
+import collections
 import enum
 import logging
 import math
@@ -29,6 +30,10 @@ else:
 class ArmMode(enum.Enum):
   GENERIC = 0,
   M4CLASS = 1
+
+
+RegContext = collections.namedtuple('RegContext', ['r0', 'r1', 'r2', 'r3',
+                                                   'r4', 'r5', 'r6', 'r7'])
 
 
 class ArmEmu:
@@ -326,6 +331,10 @@ class ArmEmu:
     del uc, udata  # unused by the hook
     self.exit_with_exception(error.Error('Invalid instruction at addr '
                                          f'0x{self.get_current_address():08x}'))
+    self.dump_regs()
+    spsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SPSR)
+    cpsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_CPSR)
+    self._log.info('CPSR 0x%08x, SPSR 0x%08x', cpsr, spsr)
     return True
 
   def _hook_invalid(self, uc: unicorn.Uc, access: int, address: int, size: int,
@@ -490,15 +499,14 @@ class ArmEmu:
         A dict mapping a register name to its value.
     """
 
-    regs = dict()
-    regs['R0'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R0)
-    regs['R1'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R1)
-    regs['R2'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R2)
-    regs['R3'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R3)
-    regs['R4'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R4)
-    regs['R5'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R5)
-    regs['R6'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R6)
-    regs['R7'] = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R7)
+    regs = RegContext(self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R0),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R1),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R2),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R3),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R4),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R5),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R6),
+                      self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R7))
 
     return regs
 

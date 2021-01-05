@@ -2,7 +2,7 @@
 
 import logging
 import struct
-from typing import List, Dict
+from typing import List
 
 import tsmok.common.error as error
 import tsmok.common.memory as memory
@@ -30,9 +30,9 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   # Internal API
   # ==============================================
-  def syscall_handler(self, regs: Dict[str, int]) -> None:
-    syscall = regs['R7']
-    args = self.get_args(regs)
+  def syscall_handler(self, regs) -> None:
+    syscall = regs.r7
+    args = self._get_args(regs)
     self._log.debug('[SWI] %d', syscall)
 
     if self.tee is None:
@@ -54,14 +54,14 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
       self._log.error(error.PrintException())
       self.exit_with_exception(e)
 
-  def get_args(self, regs: Dict[str, int]) -> List[int]:
+  def _get_args(self, regs) -> List[int]:
     args = []
-    args.append(regs['R0'])
-    args.append(regs['R1'])
-    args.append(regs['R2'])
-    args.append(regs['R3'])
-    args_num = regs['R6']
-    base_ptr = regs['R5']
+    args.append(regs.r0)
+    args.append(regs.r1)
+    args.append(regs.r2)
+    args.append(regs.r3)
+    args_num = regs.r6
+    base_ptr = regs.r5
 
     for i in range(args_num):
       arg = struct.unpack('I', self.mem_read(base_ptr + i * 4, 4))
