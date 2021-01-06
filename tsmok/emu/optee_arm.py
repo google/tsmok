@@ -4,7 +4,7 @@ import collections
 import enum
 import logging
 import struct
-from typing import List, Dict
+from typing import List
 import uuid
 
 import tsmok.atf.atf
@@ -15,6 +15,7 @@ import tsmok.emu.arm as arm
 import tsmok.optee.const as optee_const
 import tsmok.optee.types as optee_types
 
+import unicorn.arm_const as unicorn_arm_const  # pylint: disable=g-import-not-at-top
 
 SharedMemoryConfig = collections.namedtuple('SharedMemoryConfig',
                                             ['addr', 'size', 'cached'])
@@ -26,6 +27,8 @@ class OpteeArmEmu(arm.ArmEmu):
   ENTRY_VECTOR_SIZE = 9
 
   EXIT_RETURN_ADDR = 0xFFFFFF00
+
+  HYP_CNT_ID = 0
 
   class AtfEntryCallType(enum.Enum):
     STD_SMC = 1
@@ -54,6 +57,9 @@ class OpteeArmEmu(arm.ArmEmu):
     self._atf = trusted_firmware
     self._drivers = dict()
     self.exception_handler[self.ExceptionType.SMC] = self._smc_handler
+    self.exception_handler[self.ExceptionType.SWI] = self._swi_handler
+    self.exception_handler[self.ExceptionType.PREFETCH_ABORT] = \
+        self._prefetch_abort_handler
     self._atf_vector = dict()
     self._vector = dict()
     self._ret1 = 0
@@ -62,24 +68,52 @@ class OpteeArmEmu(arm.ArmEmu):
 
     self._memory_pool = None
 
-    self._rpc_hanlers = dict()
-    self._rpc_hanlers[optee_const.OpteeSmcReturn.RPC_ALLOC] = self._rpc_alloc
-    self._rpc_hanlers[optee_const.OpteeSmcReturn.RPC_FREE] = self._rpc_free
-    self._rpc_hanlers[optee_const.OpteeSmcReturn.RPC_CMD] = self._rpc_cmd
+    self._rpc_handlers = dict()
+    self._rpc_handlers[optee_const.OpteeSmcReturn.RPC_ALLOC] = self._rpc_alloc
+    self._rpc_handlers[optee_const.OpteeSmcReturn.RPC_FREE] = self._rpc_free
+    self._rpc_handlers[optee_const.OpteeSmcReturn.RPC_CMD] = self._rpc_cmd
+
+    self._rpc_cmd_handlers = dict()
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.LOAD_TA] = \
+        self._rpc_cmd_load_ta
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.RPMB] = \
+        self._rpc_cmd_rpmb
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.FS] = \
+        self._rpc_cmd_fs
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.GET_TIME] = \
+        self._rpc_cmd_get_time
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.WAIT_QUEUE] = \
+        self._rpc_cmd_wait_queue
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.SUSPEND] = \
+        self._rpc_cmd_suspend
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.SHM_ALLOC] = \
+        self._rpc_cmd_shm_alloc
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.SHM_FREE] = \
+        self._rpc_cmd_shm_free
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.SQL_FS_RESERVED] = \
+        self._rpc_cmd_sql_fs_reserved
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.CMD_GPROF] = \
+        self._rpc_cmd_gprof
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.SOCKET] = \
+        self._rpc_cmd_socket
+    self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.BENCH_REG] = \
+        self._rpc_cmd_bench_reg
 
     self.shared_memory_setup()
 
     self.add_mem_write_handler(self._va_writer_HACK_TO_TEST,
                                0x00100000, 0x00100000 + 0x1000000 - 1)
-    self.add_mem_unmapped_callback(self._exit_address_callback,
-                                   self.EXIT_RETURN_ADDR,
-                                   self.EXIT_RETURN_ADDR + 2)
+    self.add_mem_invalid_callback(self._exit_address_callback,
+                                  self.EXIT_RETURN_ADDR,
+                                  self.EXIT_RETURN_ADDR + 2)
 
   def _exit_address_callback(self, cls, access: int, addr: int, size: int):
     if addr == self.EXIT_RETURN_ADDR:
       regs = self.get_regs()
       self.exit(regs['R0'])
-    return True
+      return True
+
+    return False
 
   def _va_writer_HACK_TO_TEST(self, emu, addr, size, value):
     if size == 1:
@@ -92,7 +126,7 @@ class OpteeArmEmu(arm.ArmEmu):
       self.mem_write(addr, struct.pack('<Q', value))
 
   def _smc_handler(self, regs) -> None:
-    call = regs['R0']
+    call = regs.r0
     args = self._get_args(regs)
     self._log.debug('SMC call 0x%08x', call)
 
@@ -113,15 +147,49 @@ class OpteeArmEmu(arm.ArmEmu):
       self._log.error(error.PrintException())
       self.exit_with_exception(e)
 
-  def _get_args(self, regs: Dict[str, int]) -> List[int]:
+  def _swi_handler(self, regs) -> None:
+    try:
+      entry = self._vector[self.EntryCallType.SYSCALL]
+    except KeyError:
+      raise error.Error('Optee is not initialized')
+
+    if not entry:
+      raise error.Error('Optee is not initialized')
+
+    spsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SPSR)
+    cpsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_CPSR)
+
+    spsr = cpsr
+
+    cpsr &= ~arm.CPSR_M_MASK
+    cpsr |= arm.CpsrPeMode.SVC
+    cpsr |= arm.CpsrFieldMask.F
+    cpsr |= arm.CpsrFieldMask.I
+
+    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_CPSR, cpsr)
+    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_SPSR, spsr)
+
+    pc = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_PC)
+
+    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_PC, entry)
+    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, pc)
+
+  def _prefetch_abort_handler(self, regs) -> None:
+    self.exit_with_exception(error.Error('Prefetch Abort'))
+    spsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SPSR)
+    cpsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_CPSR)
+    self.dump_regs()
+    self._log.info('Current state CPSR 0x%08x, SPSR 0x%08x', cpsr, spsr)
+
+  def _get_args(self, regs) -> List[int]:
     args = []
-    args.append(regs['R1'])
-    args.append(regs['R2'])
-    args.append(regs['R3'])
-    args.append(regs['R4'])
-    args.append(regs['R5'])
-    args.append(regs['R6'])
-    args.append(regs['R7'])
+    args.append(regs.r1)
+    args.append(regs.r2)
+    args.append(regs.r3)
+    args.append(regs.r4)
+    args.append(regs.r5)
+    args.append(regs.r6)
+    args.append(regs.r7)
 
     return args
 
@@ -133,8 +201,8 @@ class OpteeArmEmu(arm.ArmEmu):
         sz = param.size
       region = self._memory_pool.allocate(sz)
       self._log.debug('Allocate region %d for param %s: %d addr 0x%08x, '
-                      'size %d',
-                      region.id, param.attr, region.addr, region.size)
+                      'size %d', region.id, param.attr, region.addr,
+                      region.size)
       if param.data:
         self.mem_write(region.addr, param.data)
       param.shm_ref = region.id
@@ -153,20 +221,120 @@ class OpteeArmEmu(arm.ArmEmu):
                         'for now')
     return param
 
+  def _rpc_cmd_load_ta(self, msg_arg):
+    raise NotImplementedError('RPC CMD load_ta is not supported')
+
+  def _rpc_cmd_rpmb(self, msg_arg):
+    raise NotImplementedError('RPC CMD rpmb is not supported')
+
+  def _rpc_cmd_fs(self, msg_arg):
+    raise NotImplementedError('RPC CMD fs is not supported')
+
+  def _rpc_cmd_get_time(self, msg_arg):
+    raise NotImplementedError('RPC CMD get_time is not supported')
+
+  def _rpc_cmd_wait_queue(self, msg_arg):
+    raise NotImplementedError('RPC CMD wait_queue is not supported')
+
+  def _rpc_cmd_suspend(self, msg_arg):
+    raise NotImplementedError('RPC CMD suspend is not supported')
+
+  def _rpc_cmd_shm_alloc(self, msg_arg):
+    msg_arg.ret_origin = optee_const.OpteeOriginCode.COMMS
+    msg_arg.params = []
+
+    if (len(msg_arg.params) != 1 or
+        msg_arg.params[0].attr != optee_const.OpteeMsgAttrType.VALUE_INPUT):
+      msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return bytes(msg_arg)
+
+    sz = msg_arg.params[0].b
+
+    reg = self._memory_pool.allocate(sz)
+    prm = optee_types.OpteeMsgParamTempMemOutput(reg.addr, sz, reg.id)
+    msg_arg.params.append(prm)
+
+    msg_arg.ret = optee_const.OpteeErrorCode.SUCCESS
+    return bytes(msg_arg)
+
+  def _rpc_cmd_shm_free(self, msg_arg):
+    msg_arg.ret_origin = optee_const.OpteeOriginCode.COMMS
+    msg_arg.params = []
+
+    if (len(msg_arg.params) != 1 or
+        msg_arg.params[0].attr != optee_const.OpteeMsgAttrType.VALUE_INPUT):
+      msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return bytes(msg_arg)
+
+    shm_id = msg_arg.params[0].b
+    self._memory_pool.free(shm_id)
+    msg_arg.ret = optee_const.OpteeErrorCode.SUCCESS
+    return bytes(msg_arg)
+
+  def _rpc_cmd_sql_fs_reserved(self, msg_arg):
+    raise NotImplementedError('RPC CMD sql_fs_reserved is not supported')
+
+  def _rpc_cmd_gprof(self, msg_arg):
+    raise NotImplementedError('RPC CMD cmd_gprof is not supported')
+
+  def _rpc_cmd_socket(self, msg_arg):
+    raise NotImplementedError('RPC CMD socket is not supported')
+
+  def _rpc_cmd_bench_reg(self, msg_arg):
+    raise NotImplementedError('RPC CMD bench_reg is not supported')
+
   def _rpc_alloc(self):
-    raise NotImplementedError('RPC ALLOC is not supported')
+    if not self._ret1:
+      return (0,)
+
+    reg = self._memory_pool.allocate(self._ret1)
+
+    return ((reg.addr >> 32) & 0xFFFFFFFF, reg.addr & 0xFFFFFFFF, 0,
+            (reg.id >> 32) & 0xFFFFFFFF, reg.id & 0xFFFFFFFF)
 
   def _rpc_free(self):
-    raise NotImplementedError('RPC FREE is not supported')
+    shm_id = self._ret1 << 32 | self._ret2
+    self._log.debug('RPC Free: shared ragion ID %d', shm_id)
+    self._memory_pool.free(shm_id)
+    return (0,)
 
   def _rpc_cmd(self):
-    raise NotImplementedError('RPC CMD is not supported')
+    shm_id = self._ret1 << 32 | self._ret2
+    self._log.debug('RPC CMD: shared ragion ID %d', shm_id)
+    reg = self._memory_pool.get(shm_id)
+    self._log.debug('RPC CMD: SHM addr 0x%08x, size %d', reg.addr, reg.size)
+
+    data = self.mem_read(reg.addr, reg.size)
+    msg_arg = optee_types.OpteeMsgArg(data)
+
+    try:
+      self._log.debug('RPC CMD: %s',
+                      optee_const.OpteeMsgRpcCmdType(msg_arg.cmd))
+      data = self._rpc_cmd_handlers[msg_arg.cmd](msg_arg)
+      if reg.size < len(data):
+        raise error.Error('Shared Memory size is too small')
+
+      self.mem_write(reg.addr, data)
+      return (0,)
+    except KeyError:
+      raise error.Error('Unsupported RPC CMD request: '
+                        f'{str(optee_const.OpteeMsgRpcCmdType(msg_arg.cmd))}')
 
   def _rpc_process(self):
     while optee_const.OpteeSmcReturn.is_rpc(self._ret0):
       try:
-        self._rpc_hanlers[self._ret0]()
+        self._log.debug('RPC handler: ret values: '
+                        '[ 0x%08x, 0x%08x, 0x%08x, 0x%08x ]',
+                        self._ret0, self._ret1,
+                        self._ret2, self._ret3)
+        args = self._rpc_handlers[self._ret0]()
+        if len(args) < 7:
+          args += (0,) * (6 - len(args))
+          args += (self.HYP_CNT_ID,)
+
+        ret = self.std_smc(optee_const.OpteeMsgFunc.RETURN_FROM_RPC, *args)
       except KeyError:
+        self.dump_regs()
         raise error.Error('Unsupported RPC request: 0x{self._ret0:08x}')
 
   def shared_memory_setup(self):
@@ -194,6 +362,14 @@ class OpteeArmEmu(arm.ArmEmu):
     self._drivers[drv.name] = drv
 
     drv.register(self)
+
+  def driver_get(self, name):
+    try:
+      drv = self._drivers[name]
+    except KeyError:
+      raise error.Error(f'Unknown driver name: {name}')
+
+    return drv
 
   def set_atf_vector_table_addr(self, addr: int):
     self._log.info('Set Entry Vector table to 0x%08x', addr)
@@ -248,7 +424,6 @@ class OpteeArmEmu(arm.ArmEmu):
     # only interested in VBAR_EL1
     _, vbar, _, _ = self.get_vbar_regs()
     self._set_vector_table_addr(vbar)
-
     cfg = self.get_shm_config()
     self._memory_pool = region_allocator.RegionAllocator(cfg.addr, cfg.size)
 
@@ -334,16 +509,18 @@ class OpteeArmEmu(arm.ArmEmu):
 
     reg = self._memory_pool.allocate(arg.size())
     self._log.debug('Allocate region %d for OpteeMsgArg: %d addr 0x%08x, '
-                    'size %d',
-                    reg.id, reg.addr, reg.size)
+                    'size %d', reg.id, reg.addr, reg.size)
     self.mem_write(reg.addr, bytes(arg))
     arg.shm_ref = reg.id
 
     ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
                        (reg.addr >> 32) & 0xFFFFFFFF,
-                       (reg.addr & 0xFFFFFFFF), 0)
+                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
     if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
+
+    ret_data = self.mem_read(reg.addr, reg.size)
+    arg = optee_types.OpteeMsgArg(ret_data)
 
   def invoke_command(self):
     raise NotImplementedError('invoke_command is not implemented yet')
@@ -393,6 +570,7 @@ class OpteeArmEmu(arm.ArmEmu):
     self.mem_write(reg.addr, data)
 
     self._thread_init()
+    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, 0xFFFFFF00)
     ret = self.syscall(optee_const.OpteeSysCalls.LOG, reg.addr, sz, None, None)
     self._memory_pool.free(reg.id)
     self._thread_deinit()
