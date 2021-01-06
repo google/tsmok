@@ -32,6 +32,42 @@ class ArmMode(enum.Enum):
   M4CLASS = 1
 
 
+class CpsrFieldMask(enum.IntEnum):
+  """CPSR register fields mask."""
+
+  M = 1 << 0  # 5 bits
+  T = 1 << 5
+  F = 1 << 6
+  I = 1 << 7
+  A = 1 << 8
+  E = 1 << 9
+  GE = 1 << 16  # 4 bits
+  DIT = 1 << 21
+  PAN = 1 << 22
+  SSBS = 1 << 23
+  J = 1 << 24
+  Q = 1 << 27
+  V = 1 << 28
+  C = 1 << 29
+  Z = 1 << 30
+  N = 1 << 31
+
+
+CPSR_M_MASK = 0x1f
+
+
+class CpsrPeMode(enum.IntEnum):
+  USR = 0x10  # CPSR: M User mode (PL0)
+  FIQ = 0x11  # CPSR: M Fast Interrupt mode (PL1)
+  IRQ = 0x12  # CPSR: M Interrupt mode (PL1)
+  SVC = 0x13  # CPSR: M Supervisor mode (PL1)
+  MON = 0x16  # CPSR: M Monitor mode (PL1)
+  ABT = 0x17  # CPSR: M Abort mode (PL1)
+  HYP = 0x1A  # CPSR: M Hypervisor mode (PL2)
+  UND = 0x1B  # CPSR: M Undefined mode (PL1)
+  SYS = 0x1F  # CPSR: M System mode (PL1)
+
+
 RegContext = collections.namedtuple('RegContext', ['r0', 'r1', 'r2', 'r3',
                                                    'r4', 'r5', 'r6', 'r7'])
 
