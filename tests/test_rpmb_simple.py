@@ -10,7 +10,7 @@ import tsmok.optee.storage.rpmb_simple as storage
 
 class TestStorage(unittest.TestCase):
 
-  def test_obj_create(self):
+  def test_object_create(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -22,25 +22,25 @@ class TestStorage(unittest.TestCase):
 
     overwrite_flag = optee_const.OpteeStorageFlags.OVERWRITE
 
-    self.assertEqual(s.obj_create(oid, obj_id_too_long, flags, attr, data),
+    self.assertEqual(s.object_create(oid, obj_id_too_long, flags, attr, data),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
     with self.assertRaises(error.Error):
-      s.obj_create(oid, obj_id, flags, 5, data)
+      s.object_create(oid, obj_id, flags, 5, data)
 
-    self.assertEqual(s.obj_create(oid, obj_id, flags, attr, data),
+    self.assertEqual(s.object_create(oid, obj_id, flags, attr, data),
                      optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_create(oid, obj_id, flags, attr, data),
+    self.assertEqual(s.object_create(oid, obj_id, flags, attr, data),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
-    self.assertEqual(s.obj_create(oid + 1, obj_id,
-                                  optee_const.OpteeStorageFlags.ACCESS_WRITE,
-                                  attr, data),
+    self.assertEqual(s.object_create(oid + 1, obj_id,
+                                     optee_const.OpteeStorageFlags.ACCESS_WRITE,
+                                     attr, data),
                      optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_open(oid + 1, obj_id,
-                                optee_const.OpteeStorageFlags.SHARE_WRITE),
+    self.assertEqual(s.object_open(oid + 1, obj_id,
+                                   optee_const.OpteeStorageFlags.SHARE_WRITE),
                      optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_create(oid + 1, obj_id, flags | overwrite_flag,
-                                  attr, data),
+    self.assertEqual(s.object_create(oid + 1, obj_id, flags | overwrite_flag,
+                                     attr, data),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertIn(oid, s.open_objects)
@@ -49,8 +49,9 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(s.open_objects[oid].flags, flags)
     self.assertEqual(s.open_objects[oid].object.object_id, obj_id)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_close(oid + 1), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid + 1),
+                     optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 0)
     self.assertEqual(len(s.objects), 1)
@@ -59,10 +60,10 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(s.objects[obj_id].object_id, obj_id)
     self.assertEqual(s.objects[obj_id].attr, attr)
 
-    self.assertEqual(s.obj_create(oid, obj_id, flags, attr, data),
+    self.assertEqual(s.object_create(oid, obj_id, flags, attr, data),
                      optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
 
-    self.assertEqual(s.obj_create(oid, obj_id, overwrite_flag, attr, b'xyz'),
+    self.assertEqual(s.object_create(oid, obj_id, overwrite_flag, attr, b'xyz'),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects), 1)
     self.assertEqual(len(s.objects), 1)
@@ -70,7 +71,7 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(s.objects[obj_id].data, b'xyz')
     self.assertEqual(s.objects[obj_id].object_id, obj_id)
 
-  def test_obj_open(self):
+  def test_object_open(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -82,27 +83,27 @@ class TestStorage(unittest.TestCase):
     flags = (optee_const.OpteeStorageFlags.ACCESS_READ |
              optee_const.OpteeStorageFlags.SHARE_READ)
 
-    self.assertEqual(s.obj_open(oid, obj_id_too_long, flags),
+    self.assertEqual(s.object_open(oid, obj_id_too_long, flags),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    self.assertEqual(s.obj_open(oid, obj_id2, flags),
+    self.assertEqual(s.object_open(oid, obj_id2, flags),
                      optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND)
 
-    self.assertEqual(s.obj_open(oid, obj_id, flags),
+    self.assertEqual(s.object_open(oid, obj_id, flags),
                      optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_open(oid + 1, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_WRITE),
+    self.assertEqual(s.object_open(oid + 1, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_WRITE),
                      optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_create(oid + 1, obj_id,
-                                  (optee_const.OpteeStorageFlags.SHARE_READ |
-                                   optee_const.OpteeStorageFlags.OVERWRITE),
-                                  attr, data),
+    self.assertEqual(s.object_create(oid + 1, obj_id,
+                                     (optee_const.OpteeStorageFlags.SHARE_READ |
+                                      optee_const.OpteeStorageFlags.OVERWRITE),
+                                     attr, data),
                      optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_open(oid + 1, obj_id,
-                                optee_const.OpteeStorageFlags.SHARE_READ),
+    self.assertEqual(s.object_open(oid + 1, obj_id,
+                                   optee_const.OpteeStorageFlags.SHARE_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id2, flags),
+    self.assertEqual(s.object_open(oid, obj_id2, flags),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
     self.assertIn(oid, s.open_objects)
@@ -111,9 +112,9 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(s.open_objects[oid].flags, flags)
     self.assertEqual(s.open_objects[oid].object.object_id, obj_id)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_close(self):
+  def test_object_close(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -125,17 +126,18 @@ class TestStorage(unittest.TestCase):
 
     self.assertEqual(len(s.open_objects), 0)
 
-    self.assertEqual(s.obj_open(oid, obj_id, flags),
+    self.assertEqual(s.object_open(oid, obj_id, flags),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertEqual(
-        s.obj_close(oid + 1), optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
+        s.object_close(oid + 1),
+        optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects), 0)
 
-  def test_obj_seek(self):
+  def test_object_seek(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -147,45 +149,45 @@ class TestStorage(unittest.TestCase):
              optee_const.OpteeStorageFlags.ACCESS_WRITE_META)
 
     self.assertEqual(
-        s.obj_open(oid, obj_id, flags), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_open(oid, obj_id, flags), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
     obj = s.open_objects[oid]
 
-    self.assertEqual(s.obj_seek(oid + 1, 0, 0),
+    self.assertEqual(s.object_seek(oid + 1, 0, 0),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    self.assertEqual(s.obj_seek(oid, 0, 10), \
+    self.assertEqual(s.object_seek(oid, 0, 10), \
         optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    self.assertEqual(s.obj_seek(oid, 0, optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 0, optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(obj.pos, 0)
 
-    self.assertEqual(s.obj_seek(oid, 10, optee_const.OpteeWhence.SEEK_CUR),
+    self.assertEqual(s.object_seek(oid, 10, optee_const.OpteeWhence.SEEK_CUR),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(obj.pos, 10)
 
-    self.assertEqual(s.obj_seek(oid, -10, optee_const.OpteeWhence.SEEK_END),
+    self.assertEqual(s.object_seek(oid, -10, optee_const.OpteeWhence.SEEK_END),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(obj.pos, len(data) - 10)
 
-    self.assertEqual(s.obj_seek(oid, -100, optee_const.OpteeWhence.SEEK_END),
+    self.assertEqual(s.object_seek(oid, -100, optee_const.OpteeWhence.SEEK_END),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(obj.pos, 0)
 
-    self.assertEqual(s.obj_seek(oid, 100, optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 100, optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(obj.pos, 100)
 
-    self.assertEqual(s.obj_seek(oid, 0xFFFFFFFFFF,
-                                optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 0xFFFFFFFFFF,
+                                   optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_read(self):
+  def test_object_read(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -193,40 +195,40 @@ class TestStorage(unittest.TestCase):
     attr = 0
     s.objects[obj_id] = storage.StorageObject(obj_id, data_orig, attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_WRITE),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_WRITE),
                      optee_const.OpteeErrorCode.SUCCESS)
-    ret, data = s.obj_read(oid + 1, 10)
+    ret, data = s.object_read(oid + 1, 10)
     self.assertEqual(ret, optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    ret, data = s.obj_read(oid, 10)
+    ret, data = s.object_read(oid, 10)
     self.assertEqual(ret, optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
-    ret, data = s.obj_read(oid, 10)
+    ret, data = s.object_read(oid, 10)
     self.assertEqual(ret, optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(data), 10)
     self.assertEqual(data, data_orig[:10])
 
     self.assertEqual(s.open_objects[oid].pos, 10)
 
-    ret, data = s.obj_read(oid, 40)
+    ret, data = s.object_read(oid, 40)
     self.assertEqual(ret, optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(data), 11)
     self.assertEqual(data, data_orig[10:40])
 
     self.assertEqual(s.open_objects[oid].pos, len(data_orig))
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_write(self):
+  def test_object_write(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -234,47 +236,49 @@ class TestStorage(unittest.TestCase):
     attr = 0
     s.objects[obj_id] = storage.StorageObject(obj_id, b'', attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(
-        s.obj_write(oid + 1, b''),
+        s.object_write(oid + 1, b''),
         optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
     self.assertEqual(
-        s.obj_write(oid, b''), optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_write(oid, b''),
+        optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_WRITE),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_WRITE),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
-    self.assertEqual(s.obj_write(oid, data), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_write(oid, data),
+                     optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(s.open_objects[oid].pos, 10)
     self.assertEqual(s.open_objects[oid].object.data, data)
 
-    self.assertEqual(s.obj_seek(oid, 5, optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 5, optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(s.open_objects[oid].pos, 5)
     self.assertEqual(
-        s.obj_write(oid, b'abc'), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_write(oid, b'abc'), optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(s.open_objects[oid].object.data, b'01234abc89')
 
-    self.assertEqual(s.obj_seek(oid, 20, optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 20, optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(s.open_objects[oid].pos, 20)
     self.assertEqual(
-        s.obj_write(oid, b'abc'), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_write(oid, b'abc'), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(s.open_objects[oid].object.data,
                      b'01234abc89\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00abc')
     self.assertEqual(s.open_objects[oid].pos, 23)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_trunc(self):
+  def test_object_trunc(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -282,30 +286,31 @@ class TestStorage(unittest.TestCase):
     attr = 0
     s.objects[obj_id] = storage.StorageObject(obj_id, data, attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(
-        s.obj_trunc(oid + 1, 5),
+        s.object_trunc(oid + 1, 5),
         optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
     self.assertEqual(
-        s.obj_trunc(oid, 5), optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_trunc(oid, 5),
+        optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_WRITE),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_WRITE),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
-    self.assertEqual(s.obj_trunc(oid, 5), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_trunc(oid, 5), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects[oid].object.data), 5)
     self.assertEqual(s.open_objects[oid].object.data, data[:5])
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_del(self):
+  def test_object_delete(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -313,30 +318,31 @@ class TestStorage(unittest.TestCase):
     attr = 0
     s.objects[obj_id] = storage.StorageObject(obj_id, data, attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(
-        s.obj_del(oid + 1), optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
+        s.object_delete(oid + 1),
+        optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
     self.assertEqual(
-        s.obj_del(oid), optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_delete(oid), optee_const.OpteeErrorCode.ERROR_ACCESS_CONFLICT)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id, optee_const.OpteeStorageFlags.
-                                ACCESS_WRITE_META),
+    self.assertEqual(s.object_open(oid, obj_id, optee_const.OpteeStorageFlags.
+                                   ACCESS_WRITE_META),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
-    self.assertEqual(s.obj_del(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_delete(oid), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects), 0)
     self.assertEqual(len(s.objects), 0)
 
     self.assertEqual(
-        s.obj_close(oid), optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
+        s.object_close(oid), optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-  def test_obj_rename(self):
+  def test_object_rename(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -344,41 +350,42 @@ class TestStorage(unittest.TestCase):
     attr = 0
     s.objects[obj_id] = storage.StorageObject(obj_id, data, attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_rename(oid + 1, b'id2'),
+    self.assertEqual(s.object_rename(oid + 1, b'id2'),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
-    self.assertEqual(s.obj_rename(oid, b'id2'),
+    self.assertEqual(s.object_rename(oid, b'id2'),
                      optee_const.OpteeErrorCode.ERROR_BAD_STATE)
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.SHARE_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.SHARE_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
     s.objects[b'id2'] = storage.StorageObject(b'id2', b'VALUE', attr)
-    self.assertEqual(s.obj_open(oid + 1, b'id2',
-                                optee_const.OpteeStorageFlags.SHARE_READ),
+    self.assertEqual(s.object_open(oid + 1, b'id2',
+                                   optee_const.OpteeStorageFlags.SHARE_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_rename(oid, b'id2'),
+    self.assertEqual(s.object_rename(oid, b'id2'),
                      optee_const.OpteeErrorCode.ERROR_BAD_STATE)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_close(oid + 1), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid + 1),
+                     optee_const.OpteeErrorCode.SUCCESS)
 
-    self.assertEqual(s.obj_open(oid, obj_id, optee_const.OpteeStorageFlags.
-                                ACCESS_WRITE_META),
+    self.assertEqual(s.object_open(oid, obj_id, optee_const.OpteeStorageFlags.
+                                   ACCESS_WRITE_META),
                      optee_const.OpteeErrorCode.SUCCESS)
 
     self.assertEqual(len(s.open_objects), 1)
     self.assertIn(oid, s.open_objects)
 
-    self.assertEqual(s.obj_rename(oid, b'0'*1024),
+    self.assertEqual(s.object_rename(oid, b'0'*1024),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
     self.assertEqual(
-        s.obj_rename(oid, b'id2'), optee_const.OpteeErrorCode.SUCCESS)
+        s.object_rename(oid, b'id2'), optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(len(s.open_objects), 1)
     self.assertEqual(len(s.objects), 1)
 
@@ -388,9 +395,9 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(s.objects[b'id2'].data, data)
     self.assertEqual(s.objects[b'id2'].object_id, b'id2')
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
-  def test_obj_get_info(self):
+  def test_object_get_info(self):
     s = storage.StorageRpmbSimple()
     oid = 1
     obj_id = b'id'
@@ -399,15 +406,15 @@ class TestStorage(unittest.TestCase):
     pos = 7
     s.objects[obj_id] = storage.StorageObject(obj_id, data, attr)
 
-    self.assertEqual(s.obj_open(oid, obj_id,
-                                optee_const.OpteeStorageFlags.ACCESS_READ),
+    self.assertEqual(s.object_open(oid, obj_id,
+                                   optee_const.OpteeStorageFlags.ACCESS_READ),
                      optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_seek(oid, 7, optee_const.OpteeWhence.SEEK_SET),
+    self.assertEqual(s.object_seek(oid, 7, optee_const.OpteeWhence.SEEK_SET),
                      optee_const.OpteeErrorCode.SUCCESS)
-    self.assertEqual(s.obj_get_info(oid + 1),
+    self.assertEqual(s.object_get_info(oid + 1),
                      optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS)
 
-    ret, info = s.obj_get_info(oid)
+    ret, info = s.object_get_info(oid)
     self.assertEqual(ret, optee_const.OpteeErrorCode.SUCCESS)
     self.assertEqual(info.obj_type, optee_const.OpteeObjectType.DATA)
     self.assertEqual(info.object_usage, optee_const.OpteeUsage.DEFAULT)
@@ -417,7 +424,7 @@ class TestStorage(unittest.TestCase):
     self.assertEqual(info.data_size, len(data))
     self.assertEqual(info.data_position, pos)
 
-    self.assertEqual(s.obj_close(oid), optee_const.OpteeErrorCode.SUCCESS)
+    self.assertEqual(s.object_close(oid), optee_const.OpteeErrorCode.SUCCESS)
 
   def test_enum_start(self):
     s = storage.StorageRpmbSimple()

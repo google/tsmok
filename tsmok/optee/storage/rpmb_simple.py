@@ -84,7 +84,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_open(
+  def object_open(
       self, oid: int, obj_id: int,
       flags: optee_const.OpteeStorageFlags
       ) -> optee_const.OpteeErrorCode:
@@ -113,8 +113,8 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
-  def obj_create(self, oid, obj_id, flags, attr,
-                 data) -> optee_const.OpteeErrorCode:
+  def object_create(self, oid, obj_id, flags, attr,
+                    data) -> optee_const.OpteeErrorCode:
     self.log.debug('Create %s (%d) with %s, data len %d', obj_id, oid, flags,
                    len(data))
     if attr != 0:
@@ -147,8 +147,8 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_read(self, oid: int,
-               size: int) -> (optee_const.OpteeErrorCode, bytes):
+  def object_read(self, oid: int,
+                  size: int) -> (optee_const.OpteeErrorCode, bytes):
     self.log.info('Read %s bytes from object handler %d', size, oid)
 
     if oid not in self.open_objects:
@@ -168,7 +168,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS, data
 
-  def obj_close(self, oid: int) -> optee_const.OpteeErrorCode:
+  def object_close(self, oid: int) -> optee_const.OpteeErrorCode:
     self.log.info('Close object handler %d', oid)
 
     if oid not in self.open_objects:
@@ -178,7 +178,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_del(self, oid: int) -> optee_const.OpteeErrorCode:
+  def object_delete(self, oid: int) -> optee_const.OpteeErrorCode:
     self.log.info('Delete object handler %d', oid)
     if oid not in self.open_objects:
       return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
@@ -192,7 +192,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_rename(self, oid: int, obj_id: str) -> optee_const.OpteeErrorCode:
+  def object_rename(self, oid: int, obj_id: str) -> optee_const.OpteeErrorCode:
     self.log.info('Rename %d object handler to %s', oid, obj_id)
     if len(obj_id) > optee_const.OPTEE_OBJECT_ID_MAX_LEN:
       return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
@@ -226,7 +226,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_trunc(self, oid: int, size: int) -> optee_const.OpteeErrorCode:
+  def object_trunc(self, oid: int, size: int) -> optee_const.OpteeErrorCode:
     self.log.info('Trunc %d object handler to %d', oid, size)
     if oid not in self.open_objects:
       return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
@@ -238,7 +238,7 @@ class StorageRpmbSimple(storage.OpteeStorage):
     obj.object.data = obj.object.data[:size]
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_write(self, oid: int, data: bytes) -> optee_const.OpteeErrorCode:
+  def object_write(self, oid: int, data: bytes) -> optee_const.OpteeErrorCode:
     self.log.info('[STORAGE][RPMB]: Write %d object handler: data len %d', oid,
                   len(data))
     if oid not in self.open_objects:
@@ -259,8 +259,8 @@ class StorageRpmbSimple(storage.OpteeStorage):
     obj.pos += len(data)
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_seek(self, oid: int, offset: int,
-               whence: int) -> optee_const.OpteeErrorCode:
+  def object_seek(self, oid: int, offset: int,
+                  whence: int) -> optee_const.OpteeErrorCode:
     self.log.info(
         '[STORAGE][RPMB]: Seek %d object handler: offset = %d, whence = %s',
         oid, offset, whence)
@@ -286,8 +286,8 @@ class StorageRpmbSimple(storage.OpteeStorage):
 
     return optee_const.OpteeErrorCode.SUCCESS
 
-  def obj_get_info(self, oid: int) -> (optee_const.OpteeErrorCode,
-                                       optee_types.OpteeObjectInfo):
+  def object_get_info(self, oid: int) -> (optee_const.OpteeErrorCode,
+                                          optee_types.OpteeObjectInfo):
     if oid not in self.open_objects:
       return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 

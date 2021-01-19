@@ -375,7 +375,7 @@ class Optee:
 
       objh = self.gen_obj_handler()
       flags = optee_const.OpteeStorageFlags(args[3])
-      ret = storage.obj_open(objh, object_id, flags)
+      ret = storage.object_open(objh, object_id, flags)
       if ret == optee_const.OpteeErrorCode.SUCCESS:
         self.object_handlers[objh] = storage
         ta.mem_write(args[4], struct.pack('I', objh))
@@ -421,7 +421,7 @@ class Optee:
 
       objh = self.gen_obj_handler()
       flags = optee_const.OpteeStorageFlags(args[3])
-      ret = storage.obj_create(objh, object_id, flags, args[4], data)
+      ret = storage.object_create(objh, object_id, flags, args[4], data)
       if ret == optee_const.OpteeErrorCode.SUCCESS:
         self.object_handlers[objh] = storage
         ta.mem_write(args[7], struct.pack('I', objh))
@@ -452,7 +452,7 @@ class Optee:
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
-      ret, data = storage.obj_read(args[0], args[2])
+      ret, data = storage.object_read(args[0], args[2])
       if ret == optee_const.OpteeErrorCode.SUCCESS:
         ta.mem_write(args[1], data)
         ta.u32_write(args[3], len(data))
@@ -482,7 +482,7 @@ class Optee:
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       del self.object_handlers[args[0]]
-      return storage.obj_del(args[0])
+      return storage.object_delete(args[0])
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -510,7 +510,7 @@ class Optee:
     object_id = ta.mem_read(args[1], args[2])
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
-      return storage.obj_rename(args[0], object_id)
+      return storage.object_rename(args[0], object_id)
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -536,7 +536,7 @@ class Optee:
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
-      return storage.obj_trunc(args[0], args[1])
+      return storage.object_trunc(args[0], args[1])
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -564,7 +564,7 @@ class Optee:
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       data = ta.mem_read(args[1], args[2])
-      return storage.obj_write(args[0], data)
+      return storage.object_write(args[0], data)
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -592,7 +592,7 @@ class Optee:
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
-      return storage.obj_seek(args[0], args[1], args[2])
+      return storage.object_seek(args[0], args[1], args[2])
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -781,7 +781,7 @@ class Optee:
       storage = self.object_handlers[args[0]]
       self.log.info('Found open object handler %d in %s', args[0], storage.name)
       del self.object_handlers[args[0]]
-      return storage.obj_close(args[0])
+      return storage.object_close(args[0])
 
     return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
@@ -814,7 +814,7 @@ class Optee:
 
     storage = self.object_handlers[args[0]]
     self.log.info('Found open object handler %d in %s', args[0], storage.name)
-    ret, info = storage.obj_get_info(args[0])
+    ret, info = storage.object_get_info(args[0])
     if ret != optee_const.OpteeErrorCode.SUCCESS:
       return ret
 
@@ -883,7 +883,7 @@ class Optee:
     algo = optee_const.OpteeCrypAlg(args[0])
     mode = optee_const.OpteeCrypOperation(args[1])
 
-    self.log.debug('Crypto Allocation: %algo, mode = %s', algo, mode)
+    self.log.debug('Crypto State Allocation: algo = %s, mode = %s', algo, mode)
 
     ret, st = self.crypto_module.state_alloc(algo, mode, args[2], args[3])
     if ret == optee_const.OpteeErrorCode.SUCCESS:
