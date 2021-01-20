@@ -99,6 +99,20 @@ class Optee:
                            .CRYP_STATE_ALLOC] = self.syscall_cryp_state_alloc
     self.syscall_callbacks[optee_const.OpteeSysCalls
                            .CRYP_STATE_FREE] = self.syscall_cryp_state_free
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_OBJ_ALLOC] = self.syscall_cryp_obj_alloc
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_OBJ_POPULATE] = self.syscall_cryp_obj_populate
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_OBJ_RESET] = self.syscall_cryp_obj_reset
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_OBJ_COPY] = self.syscall_cryp_obj_copy
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_OBJ_GET_ATTR] = self.syscall_cryp_obj_get_attr
+
+    self.syscall_callbacks[optee_const.OpteeSysCalls
+                           .CRYP_DERIVE_KEY] = self.syscall_cryp_derive_key
+
     self.syscall_callbacks[
         optee_const.OpteeSysCalls.HASH_INIT] = self.syscall_hash_init
     self.syscall_callbacks[
@@ -912,6 +926,242 @@ class Optee:
 
     return self.crypto_module.state_free(args[0])
 
+  # TEE_Result syscall_cryp_obj_alloc(unsigned long obj_type,
+  #           unsigned long max_key_size, uint32_t *obj)
+  def syscall_cryp_obj_alloc(self, ta: ta_base.Ta,
+                             args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to allocate crypto module object.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 5 elements:
+           [0]: type
+           [1]: max key size
+           [2]: pointer to a crypto object handler
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    self.args_dump(args)
+
+    if len(args) < 3:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    if args[2] == 0:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    otype = optee_const.OpteeObjectType(args[0])
+    if otype == optee_const.OpteeObjectType.DATA:
+      return optee_const.OpteeErrorCode.ERROR_NOT_SUPPORTED
+
+    self.log.debug('Crypto Object Allocation: mode = %s', otype)
+
+    objh = self.gen_obj_handler()
+    ret = self.crypto_module.object_alloc(objh, otype, args[1])
+    if ret == optee_const.OpteeErrorCode.SUCCESS:
+      self.object_handlers[objh] = self.crypto_module
+      ta.u32_write(args[2], objh)
+
+    return ret
+
+  # TEE_Result syscall_cryp_obj_populate(unsigned long obj,
+  #           struct utee_attribute *usr_attrs,
+  #           unsigned long attr_count)
+  def syscall_cryp_obj_populate(self, ta: ta_base.Ta,
+                                args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to populate crypto module object.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 5 elements:
+           [0]: handler id to the crypto object
+           [1]: pointer to attributes
+           [2]: attributes count
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    self.args_dump(args)
+
+    if len(args) < 3:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    self.log.info('Get object info %d', args[0])
+    if args[0] not in self.object_handlers:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    if args[1] == 0:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    if args[2] == 0:
+      return optee_const.OpteeErrorCode.SUCCESS
+
+    attr_size = optee_types.OpteeUteeAttribute.size()
+    total_size = attr_size * args[2]
+    data = ta.mem_read(args[1], total_size)
+
+    attrs = []
+    off = 0
+    for _ in range(args[2]):
+      attr = optee_types.OpteeUteeAttribute.create(data[off:])
+      if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
+        if attr.ptr and attr.size:
+          attr.data = ta.mem_read(attr.ptr, attr.size)
+      off += attr_size
+      attrs.append(attr)
+
+    storage = self.object_handlers[args[0]]
+    self.log.info('Found open object handler %d in %s', args[0], storage.name)
+    ret = storage.object_populate(args[0], attrs)
+    return ret
+
+  # TEE_Result syscall_cryp_obj_reset(unsigned long obj)
+  def syscall_cryp_obj_reset(self, ta: ta_base.Ta,
+                             args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to reset crypto module object.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 5 elements:
+           [0]: handler id to the crypto object
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    del ta  # unused
+    self.args_dump(args)
+
+    if len(args) < 1:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    self.log.info('Get object info %d', args[0])
+    if args[0] not in self.object_handlers:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    storage = self.object_handlers[args[0]]
+    self.log.info('Found open object handler %d in %s', args[0], storage.name)
+    ret = storage.object_reset(args[0])
+    return ret
+
+  # TEE_Result syscall_cryp_obj_copy(unsigned long dst, unsigned long src)
+  def syscall_cryp_obj_copy(self, ta: ta_base.Ta,
+                            args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to copy crypto module object.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 5 elements:
+           [0]: handler id to dst the crypto object
+           [1]: handler id to src the crypto object
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    del ta  # unused
+    self.args_dump(args)
+
+    if len(args) < 1:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    self.log.info('Get object info dst: %d; src: %d', args[0], args[1])
+    if args[0] not in self.object_handlers:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    storage = self.object_handlers[args[0]]
+    self.log.info('Found open object handler %d in %s', args[0], storage.name)
+    ret = storage.object_copy(args[0], args[1])
+    return ret
+
+  # TEE_Result syscall_cryp_obj_get_attr(unsigned long obj,
+  #           unsigned long attr_id,
+  #           void *buffer, uint64_t *size)
+  def syscall_cryp_obj_get_attr(self, ta: ta_base.Ta,
+                                args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to get specific attribute data from crypto module object.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 5 elements:
+           [0]: handler id to dst the crypto object
+           [1]: attribute id
+           [2]: buffer ptr
+           [3]: buffer size ptr
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    self.args_dump(args)
+
+    if len(args) < 4:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    if args[2] == 0 or args[3] == 0:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    attr_id = optee_const.OpteeAttr(args[1])
+
+    self.log.info('Get object id: %d; attr id: %s', args[0], attr_id)
+    if args[0] not in self.object_handlers:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    storage = self.object_handlers[args[0]]
+    self.log.info('Found open object handler %d in %s', args[0], storage.name)
+    ret, data = storage.object_get_attr(args[0], attr_id)
+    if ret == optee_const.OpteeErrorCode.SUCCESS:
+      buf_size = ta.u32_read(args[3])
+      out_size = buf_size
+      if buf_size:
+        data = data[:buf_size]
+        out_size = len(data)
+        ta.mem_write(args[2], data)
+      ta.u32_write(args[3], out_size)
+
+    return ret
+
+  # TEE_Result syscall_cryp_derive_key(unsigned long state,
+  #             const struct utee_attribute *usr_params,
+  #             unsigned long param_count, unsigned long derived_key)
+  def syscall_cryp_derive_key(self, ta: ta_base.Ta,
+                              args: List[int]) -> optee_const.OpteeErrorCode:
+    """Syscall to derive key.
+
+    Args:
+     ta: TA emulator instance
+     args: argument list should have at least 3 elements:
+           [0]: crypto state handler
+           [1]: pointer to parameters
+           [2]: parameters count
+           [3]: derived key
+
+    Returns:
+      optee_const.OpteeErrorCode return code
+    """
+    self.args_dump(args)
+
+    if len(args) < 4:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    self.log.info('Get state id %d', args[0])
+    if args[1] == 0:
+      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+
+    attrs = []
+    if args[2]:
+      attr_size = optee_types.OpteeUteeAttribute.size()
+      total_size = attr_size * args[2]
+      data = ta.mem_read(args[1], total_size)
+
+      off = 0
+      for _ in range(args[2]):
+        attr = optee_types.OpteeUteeAttribute.create(data[off:])
+        if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
+          if attr.ptr and attr.size:
+            attr.data = ta.mem_read(attr.ptr, attr.size)
+        off += attr_size
+        attrs.append(attr)
+
+    return self.crypto_module.derive_key(args[0], attrs, args[3])
+
   # TEE_Result syscall_hash_init(unsigned long state,
   #                       const void *iv __maybe_unused,
   #                       size_t iv_len __maybe_unused)
@@ -1045,6 +1295,8 @@ class Optee:
       return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     name = ta.mem_read(args[1], args[2])
+    self.log.info('Get index for "%s" property from 0x%08x propset.',
+                  name, args[0])
     if args[0] not in self.prop_sets:
       return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 

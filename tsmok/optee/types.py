@@ -30,8 +30,8 @@ class OpteeObjectInfo:
     self.obj_type = optee_const.OpteeObjectType.DATA
     self.object_usage = optee_const.OpteeUsage.DEFAULT
     self.handle_flags = optee_const.OpteeHandleFlags.INITIALIZED
-    self.max_object_size = optee_const.OPTEE_OBJECT_ID_MAX_LEN
-    self.object_size = 0
+    self.max_object_size = optee_const.OPTEE_OBJECT_ID_MAX_LEN  # max_key_size
+    self.object_size = 0  #  can be used as key_size
     self.data_size = 0
     self.data_position = 0
 
@@ -302,6 +302,270 @@ class OpteePropertyBinBlock(OpteeProperty):
 
   def data(self) -> bytes:
     return self.get_value()
+
+
+class OpteeCrypObjTypeAttr:
+  """Defines OPTEE Object type attributes."""
+
+  FORMAT = '<I4H'
+
+  def __init__(self, data=None):
+    if data:
+      if isinstance(data, bytes):
+        self.load(data)
+      else:
+        raise ValueError('Wrong type of data')
+    else:
+      self.attr_id = 0
+      self.flags = 0
+      self.ops_index = 0
+      self.raw_offs = 0
+      self.raw_size = 0
+
+  def load(self, data):
+    sz = struct.calcsize(self.FORMAT)
+
+    if len(data) < sz:
+      raise ValueError(f'Not enough data: {len(data)} < {sz}')
+
+    self.attr_id, self.flags, self.ops_index, self.raw_offs, self.raw_size = \
+        struct.unpack(self.FORMAT, data[:sz])
+    return sz
+
+  @staticmethod
+  def size():
+    return struct.calcsize(OpteeCrypObjTypeAttr.FORMAT)
+
+  def __bytes__(self):
+    return struct.pack(self.FORMAT, self.attr_id, self.flags, self.ops_index,
+                       self.raw_offs, self.raw_size)
+
+  def __str__(self):
+    out = 'OpteeCrypObjTypeAttribute:\n'
+    out += f'attr id:     {str(self.attr_id)}\n'
+    out += f'flags:       {self.flags}\n'
+    out += f'ops index:   {self.ops_index}\n'
+    out += f'raw offset:  {self.raw_offs}\n'
+    out += f'raw size:    {self.raw_size}\n'
+
+    return out
+
+
+class OpteeCrypObjTypeProperty:
+  """Defines OPTEE Crypto object type property."""
+
+  FORMAT = '<I3H2B'
+
+  def __init__(self, data=None):
+    if data:
+      if isinstance(data, bytes):
+        self.load(data)
+      else:
+        raise ValueError('Wrong type of data')
+    else:
+      self.obj_type = 0
+      self.min_size = 0
+      self.max_size = 0
+      self.alloc_size = 0
+      self.quanta = 0
+      self.attrs = []
+
+  def load(self, data):
+    """Loads OpteeCrypObjTypeProperty object from raw data.
+
+    Args:
+      data: raw binary data to be parsed
+
+    Returns:
+      The size of parsed data.
+
+    Raises:
+      ValueError exception is raised if size of data is not enough for parsing.
+    """
+
+    sz = struct.calcsize(self.FORMAT)
+    if len(data) < sz:
+      raise ValueError(f'Not enough data: {len(data)} < {sz}')
+
+    self.obj_type, self.min_size, self.max_size, self.alloc_size, self.quanta, num = \
+        struct.unpack(self.FORMAT, data[:sz])
+
+    attr_sz = OpteeCrypObjTypeAttr.size()
+    if len(data[sz:]) < attr_sz * num:
+      raise ValueError(f'Not enough data: {len(data)} < {sz + attr_sz * num}')
+
+    off = sz
+    for _ in range(num):
+      attr = OpteeCrypObjTypeAttr()
+      off += attr.load(data[off:])
+      self.attrs.append(attr)
+
+    return sz + attr_sz * num
+
+  def __str__(self):
+    out = 'OpteeCrypObjTypeProperty:\n'
+    out += f'obj type:   {str(self.obj_type)}\n'
+    out += f'min size:   {self.min_size}\n'
+    out += f'max size:   {self.max_size}\n'
+    out += f'alloc size: {self.alloc_size}\n'
+    out += f'quanta:     {self.quanta}\n'
+    out += 'Attributes:\n'
+    for a in self.attrs:
+      out += str(a) + '\n'
+
+    return out
+
+  @staticmethod
+  def min_size():
+    return struct.calcsize(OpteeCrypObjTypeProperty.FORMAT)
+
+  @staticmethod
+  def get_needed_total_size(data):
+    _, _, _, _, _, num = struct.unpack(OpteeCrypObjTypeProperty.FORMAT, data)
+    return (struct.calcsize(OpteeCrypObjTypeProperty.FORMAT) +
+            OpteeCrypObjTypeAttr.size() * num)
+
+
+class OpteeUteeAttribute:
+  """Defines OPTEE Utee Attribute base class."""
+
+  FORMAT = '<2Q2I'
+
+  def __init__(self):
+    self.atype = 0
+
+  @staticmethod
+  def size():
+    return struct.calcsize(OpteeUteeAttribute.FORMAT)
+
+  @staticmethod
+  def create(data):
+    """Creates OpteeUteeAttribute derived object based on parsing raw data.
+
+    Args:
+      data: raw binary data
+
+    Returns:
+      OpteeUteeAttribute derived object.
+
+    Raises:
+      ValueError exception is raised if size of data is not enough for parsing.
+    """
+
+    sz = struct.calcsize(OpteeUteeAttribute.FORMAT)
+
+    if len(data) < sz:
+      raise ValueError(f'Not enough data: {len(data)} < {sz}')
+
+    a, b, atype, _ = struct.unpack(OpteeUteeAttribute.FORMAT, data[:sz])
+    if atype & optee_const.OPTEE_ATTR_BIT_VALUE:
+      attr = OpteeUteeAttributeValue()
+      attr.a = a
+      attr.b = b
+    else:
+      attr = OpteeUteeAttributeMemory()
+      attr.ptr = a
+      attr.size = b
+
+    attr.atype = optee_const.OpteeAttr(atype)
+
+    return attr
+
+
+class OpteeUteeAttributeValue(OpteeUteeAttribute):
+  """Defines OPTEE Utee Attribute Value class."""
+
+  def __init__(self, data=None):
+    OpteeUteeAttribute.__init__(self)
+    if data:
+      if isinstance(data, bytes):
+        self.load(data)
+      else:
+        raise ValueError('Wrong type of data')
+    else:
+      self.a = 0
+      self.b = 0
+
+  def load(self, data):
+    """Loads OpteeUteeAttributeValue object from raw data.
+
+    Args:
+      data: raw binary data to be parsed
+
+    Returns:
+      The size of parsed data.
+
+    Raises:
+      ValueError exception is raised if size of data is not enough for parsing.
+    """
+    sz = struct.calcsize(self.FORMAT)
+
+    if len(data) < sz:
+      raise ValueError(f'Not enough data: {len(data)} < {sz}')
+
+    self.a, self.b, atype = struct.unpack(self.FORMAT, data[:sz])
+    if not atype & optee_const.OPTEE_ATTR_BIT_VALUE:
+      raise ValueError('Parsed attribute is not VALUE one')
+
+    self.atype = optee_const.OpteeAttr(atype)
+    return sz
+
+  def __str__(self):
+    out = 'OpteeUteeAttributeValue:\n'
+    out += f'\ta: {self.a}\n'
+    out += f'\tb: {self.b}\n'
+    out += f'\ttype: {str(self.atype)}\n'
+
+    return out
+
+
+class OpteeUteeAttributeMemory(OpteeUteeAttribute):
+  """Defines OPTEE Utee Attribute Memory reference class."""
+
+  def __init__(self, data=None):
+    OpteeUteeAttribute.__init__(self)
+    if data:
+      if isinstance(data, bytes):
+        self.load(data)
+      else:
+        raise ValueError('Wrong type of data')
+    else:
+      self.ptr = 0
+      self.size = 0
+      self.data = None
+
+  def load(self, data):
+    """Loads OpteeUteeAttributeMemory object from raw data.
+
+    Args:
+      data: raw binary data to be parsed
+
+    Returns:
+      The size of parsed data.
+
+    Raises:
+      ValueError exception is raised if size of data is not enough for parsing.
+    """
+    sz = struct.calcsize(self.FORMAT)
+
+    if len(data) < sz:
+      raise ValueError(f'Not enough data: {len(data)} < {sz}')
+
+    self.ptr, self.size, atype = struct.unpack(self.FORMAT, data[:sz])
+    if atype & optee_const.OPTEE_ATTR_BIT_VALUE:
+      raise ValueError('Parsed attribute is VALUE one, not Memory')
+
+    self.atype = optee_const.OpteeAttr(atype)
+    return sz
+
+  def __str__(self):
+    out = 'OpteeUteeAttributeValue:\n'
+    out += f'\tptr:  0x{self.ptr:08x}\n'
+    out += f'\tsize: {self.size}\n'
+    out += f'\ttype: {str(self.atype)}\n'
+    out += f'\tdata: {str(self.data)}\n'
+
+    return out
 
 
 class OpteeMsgArg:
