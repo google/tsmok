@@ -900,3 +900,12 @@ class OpteeMsgRpcWaitQueueType(enum.IntEnum):
   SLEEP = 0
   WAKEUP = 1
 
+
+class OpteeRpmbRequestCmd(enum.IntEnum):
+  DATA_REQUEST = 0
+  GET_DEV_INFO = 1
+
+
+class OpteeRpmbGetDevInfoReturn(enum.IntEnum):
+  OK = 0x00
+  ERROR = 0x01
