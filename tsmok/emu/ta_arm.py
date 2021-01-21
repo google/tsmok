@@ -9,6 +9,7 @@ import tsmok.common.memory as memory
 import tsmok.common.ta_error as ta_error
 import tsmok.emu.arm as arm
 import tsmok.optee.const as optee_const
+import tsmok.optee.image_ta as image_ta
 import tsmok.optee.ta.base as ta_base
 import tsmok.optee.types as optee_types
 
@@ -76,8 +77,11 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
   def load(self, image) -> None:
+    if not isinstance(image, image_ta.TaImage):
+      raise error.Error(f'Unsupported type of the image: {type(image)}')
     arm.ArmEmu.load(self, image)
 
+    self.uuid = image.uuid
     self.set_stack(self.STACK_PTR, image.stack_size)
     self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
                     memory.MemAccessPermissions.RW)

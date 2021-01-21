@@ -10,6 +10,7 @@ import capstone
 import portion
 import tsmok.common.const as const
 import tsmok.common.error as error
+import tsmok.common.image as image
 import tsmok.common.memory as memory
 import tsmok.common.round_up as round_up
 import tsmok.coverage.base as coverage
@@ -868,10 +869,25 @@ class ArmEmu:
       self._coverage_registered[name].stop()
       del self._coverage_registered[name]
 
-  def load(self, image) -> None:
-    self.image = image
+  def load(self, img) -> None:
+    """Loads Image object into emu memory.
 
-    for reg in image.mem_regions:
+    Args:
+      img: Image to be loaded
+
+    Returns:
+      None
+
+    Raises:
+      Exception Error is raised in case of error.
+    """
+
+    if not isinstance(img, image.Image):
+      raise error.Error(f'Unsupported type of the image: {type(image)}')
+
+    self.image = img
+
+    for reg in img.mem_regions:
       if isinstance(reg, memory.MemoryRegionData):
         self.load_to_mem(reg.name, reg.start, reg.data, reg.perm)
       elif isinstance(reg, memory.MemoryRegion):
