@@ -24,6 +24,7 @@ SharedMemoryConfig = collections.namedtuple('SharedMemoryConfig',
 class OpteeArmEmu(arm.ArmEmu):
   """Implimentation of OPTEE Emulator for ARM architecture."""
 
+  MEMORY_ALIGNMENT = 32
   ENTRY_VECTOR_SIZE = 9
 
   EXIT_RETURN_ADDR = 0xFFFFFF00
@@ -101,8 +102,10 @@ class OpteeArmEmu(arm.ArmEmu):
 
     self.shared_memory_setup()
 
-    self.add_mem_write_handler(self._va_writer_HACK_TO_TEST,
+    # TODO(dmityya): Fix the unicorn engine
+    self.add_mem_write_handler(self._workaround_vma_writer,
                                0x00100000, 0x00100000 + 0x1000000 - 1)
+
     self.add_mem_invalid_callback(self._exit_address_callback,
                                   self.EXIT_RETURN_ADDR,
                                   self.EXIT_RETURN_ADDR + 2)
@@ -110,12 +113,12 @@ class OpteeArmEmu(arm.ArmEmu):
   def _exit_address_callback(self, cls, access: int, addr: int, size: int):
     if addr == self.EXIT_RETURN_ADDR:
       regs = self.get_regs()
-      self.exit(regs['R0'])
+      self.exit(regs.r0)
       return True
 
     return False
 
-  def _va_writer_HACK_TO_TEST(self, emu, addr, size, value):
+  def _workaround_vma_writer(self, emu, addr, size, value):
     if size == 1:
       self.mem_write(addr, struct.pack('<B', value))
     elif size == 2:
@@ -200,14 +203,15 @@ class OpteeArmEmu(arm.ArmEmu):
       else:
         sz = param.size
       region = self._memory_pool.allocate(sz)
-      self._log.debug('Allocate region %d for param %s: %d addr 0x%08x, '
+      self._log.debug('Allocate region %d for param %s: addr 0x%08x, '
                       'size %d', region.id, param.attr, region.addr,
                       region.size)
       if param.data:
         self.mem_write(region.addr, param.data)
       param.shm_ref = region.id
       param.addr = region.addr
-    if isinstance(param, optee_types.OpteeMsgParamRegMem):
+      param.size = sz
+    elif isinstance(param, optee_types.OpteeMsgParamRegMem):
       raise error.Error('optee_types.OpteeMsgParamRegMem is not '
                         'supported for now')
     return param
@@ -288,7 +292,6 @@ class OpteeArmEmu(arm.ArmEmu):
 
   def _rpc_cmd_shm_alloc(self, msg_arg):
     msg_arg.ret_origin = optee_const.OpteeOriginCode.COMMS
-    msg_arg.params = []
 
     if (len(msg_arg.params) != 1 or
         msg_arg.params[0].attr != optee_const.OpteeMsgAttrType.VALUE_INPUT):
@@ -299,6 +302,7 @@ class OpteeArmEmu(arm.ArmEmu):
 
     reg = self._memory_pool.allocate(sz)
     prm = optee_types.OpteeMsgParamTempMemOutput(reg.addr, sz, reg.id)
+    msg_arg.params = []
     msg_arg.params.append(prm)
 
     msg_arg.ret = optee_const.OpteeErrorCode.SUCCESS
@@ -306,7 +310,6 @@ class OpteeArmEmu(arm.ArmEmu):
 
   def _rpc_cmd_shm_free(self, msg_arg):
     msg_arg.ret_origin = optee_const.OpteeOriginCode.COMMS
-    msg_arg.params = []
 
     if (len(msg_arg.params) != 1 or
         msg_arg.params[0].attr != optee_const.OpteeMsgAttrType.VALUE_INPUT):
@@ -315,6 +318,7 @@ class OpteeArmEmu(arm.ArmEmu):
 
     shm_id = msg_arg.params[0].b
     self._memory_pool.free(shm_id)
+    msg_arg.params = []
     msg_arg.ret = optee_const.OpteeErrorCode.SUCCESS
     return bytes(msg_arg)
 
@@ -341,13 +345,13 @@ class OpteeArmEmu(arm.ArmEmu):
 
   def _rpc_free(self):
     shm_id = self._ret1 << 32 | self._ret2
-    self._log.debug('RPC Free: shared ragion ID %d', shm_id)
+    self._log.info('RPC Free: shared ragion ID %d', shm_id)
     self._memory_pool.free(shm_id)
     return (0,)
 
   def _rpc_cmd(self):
     shm_id = self._ret1 << 32 | self._ret2
-    self._log.debug('RPC CMD: shared ragion ID %d', shm_id)
+    self._log.info('RPC CMD: shared ragion ID %d', shm_id)
     reg = self._memory_pool.get(shm_id)
     self._log.debug('RPC CMD: SHM addr 0x%08x, size %d', reg.addr, reg.size)
 
@@ -355,8 +359,8 @@ class OpteeArmEmu(arm.ArmEmu):
     msg_arg = optee_types.OpteeMsgArg(data)
 
     try:
-      self._log.debug('RPC CMD: %s',
-                      optee_const.OpteeMsgRpcCmdType(msg_arg.cmd))
+      self._log.info('RPC CMD: %s',
+                     optee_const.OpteeMsgRpcCmdType(msg_arg.cmd))
       data = self._rpc_cmd_handlers[msg_arg.cmd](msg_arg)
       if reg.size < len(data):
         raise error.Error('Shared Memory size is too small')
@@ -386,7 +390,7 @@ class OpteeArmEmu(arm.ArmEmu):
 
   def shared_memory_setup(self):
     if not self._atf:
-      self._log.debug('No ATL shared memory configuration')
+      self._log.debug('No ATF shared memory configuration')
       return
 
     for mem in self._atf.mem_regions:
@@ -472,7 +476,8 @@ class OpteeArmEmu(arm.ArmEmu):
     _, vbar, _, _ = self.get_vbar_regs()
     self._set_vector_table_addr(vbar)
     cfg = self.get_shm_config()
-    self._memory_pool = region_allocator.RegionAllocator(cfg.addr, cfg.size)
+    self._memory_pool = region_allocator.RegionAllocator(cfg.addr, cfg.size,
+                                                         self.MEMORY_ALIGNMENT)
 
   # ATF side calls
   def fast_smc(self, cmd: int, arg0: int, arg1: int, arg2: int,
@@ -555,7 +560,7 @@ class OpteeArmEmu(arm.ArmEmu):
       arg.params.append(self._param_to_memory(param))
 
     reg = self._memory_pool.allocate(arg.size())
-    self._log.debug('Allocate region %d for OpteeMsgArg: %d addr 0x%08x, '
+    self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
                     'size %d', reg.id, reg.addr, reg.size)
     self.mem_write(reg.addr, bytes(arg))
     arg.shm_ref = reg.id
@@ -569,11 +574,73 @@ class OpteeArmEmu(arm.ArmEmu):
     ret_data = self.mem_read(reg.addr, reg.size)
     arg = optee_types.OpteeMsgArg(ret_data)
 
-  def invoke_command(self):
-    raise NotImplementedError('invoke_command is not implemented yet')
+    self._memory_pool.free(reg.id)
+    if arg.ret != optee_const.OpteeSmcReturn.OK:
+      self._log.error('OpenSession failed with error 0x%08x, origin 0x%08x',
+                      arg.reg, arg.ret_origin)
+    else:
+      for param in arg.params:
+        self._param_from_memory(param)
 
-  def close_session(self):
-    raise NotImplementedError('close_session is not implemented yet')
+    return arg.ret, arg.session, arg.params
+
+  def invoke_command(self, session: int, cmd: int, params):
+    arg = optee_types.OpteeMsgArg(optee_const.OpteeMsgCmd.INVOKE_COMMAND)
+    arg.session = session
+    arg.func = cmd
+
+    for param in params:
+      arg.params.append(self._param_to_memory(param))
+
+    reg = self._memory_pool.allocate(arg.size())
+    self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
+                    'size %d', reg.id, reg.addr, reg.size)
+    self.mem_write(reg.addr, bytes(arg))
+    arg.shm_ref = reg.id
+
+    ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
+                       (reg.addr >> 32) & 0xFFFFFFFF,
+                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+    if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
+      self._rpc_process()
+
+    ret_data = self.mem_read(reg.addr, reg.size)
+    arg = optee_types.OpteeMsgArg(ret_data)
+
+    self._memory_pool.free(reg.id)
+    if arg.ret != optee_const.OpteeSmcReturn.OK:
+      self._log.error('Invoke Command failed with error 0x%08x, origin 0x%08x',
+                      arg.reg, arg.ret_origin)
+    else:
+      for param in arg.params:
+        self._param_from_memory(param)
+
+    return arg.ret, arg.params
+
+  def close_session(self, session: int):
+    arg = optee_types.OpteeMsgArg(optee_const.OpteeMsgCmd.CLOSE_SESSION)
+    arg.session = session
+
+    reg = self._memory_pool.allocate(arg.size())
+    self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
+                    'size %d', reg.id, reg.addr, reg.size)
+    self.mem_write(reg.addr, bytes(arg))
+    arg.shm_ref = reg.id
+
+    ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
+                       (reg.addr >> 32) & 0xFFFFFFFF,
+                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+    if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
+      self._rpc_process()
+
+    ret_data = self.mem_read(reg.addr, reg.size)
+    arg = optee_types.OpteeMsgArg(ret_data)
+
+    self._memory_pool.free(reg.id)
+    if arg.ret != optee_const.OpteeSmcReturn.OK:
+      self._log.error('Close Command failed with error 0x%08x, origin 0x%08x',
+                      arg.reg, arg.ret_origin)
+    return arg.ret
 
   def cancel(self):
     raise NotImplementedError('cancel is not implemented yet')
