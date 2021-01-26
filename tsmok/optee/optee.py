@@ -190,35 +190,36 @@ class Optee:
     for i in range(len(args)):
       self.log.debug('\targs[%d]: 0x%08x', i, args[i])
 
-  def optee_params_load_from_memory(self, ta: ta_base.Ta,
-                                    addr: int) -> List[optee_types.OpteeParam]:
+  def optee_params_load_from_memory(self, ta: ta_base.Ta, addr: int
+                                   ) -> List[optee_types.OpteeTaParam]:
     buf = ta.mem_read(addr, optee_const.OPTEE_PARAMS_DATA_SIZE)
     params = optee_types.optee_params_from_data(buf)
     for p in params:
-      if isinstance(p, optee_types.OpteeParamMemref):
-        if p.ptr != 0 and p.size != 0:
-          p.data = ta.mem_read(p.ptr, p.size)
+      if isinstance(p, optee_types.OpteeTaParamMemref):
+        if p.addr != 0 and p.size != 0:
+          p.data = ta.mem_read(p.addr, p.size)
 
     return params
 
   def optee_params_load_to_memory(self, ta: ta_base.Ta, addr: int,
-                                  params: List[optee_types.OpteeParam]) -> None:
-    """Loads optee_types.OpteeParam list into TA memory.
+                                  params: List[optee_types.OpteeTaParam]
+                                 ) -> None:
+    """Loads optee_types.OpteeTaParam list into TA memory.
 
     Args:
       ta: TA emulator instance
       addr: Address in the TA memory space where parameters will be loaded
-      params: the list of optee_types.OpteeParam paramenters
+      params: the list of optee_types.OpteeTaParam paramenters
 
     Returns: None
     """
     buf = optee_types.optee_params_to_data(params)
     for p in params:
-      if isinstance(p, optee_types.OpteeParamMemref):
+      if isinstance(p, optee_types.OpteeTaParamMemref):
         if p.data:
-          if p.ptr == 0 or len(p.data) > p.size:
+          if p.addr == 0 or len(p.data) > p.size:
             raise error.Error(f'wrong format or data size: {str(p)}')
-          ta.mem_write(p.ptr, p.data)
+          ta.mem_write(p.addr, p.data)
 
     ta.mem_write(addr, buf)
 
@@ -262,7 +263,7 @@ class Optee:
      args: argument list should have at least 5 elements:
            [0]: address to TEE_UUID structure
            [1]: 'cancel request to' parameter
-           [2]: pointer to OpteeParam list
+           [2]: pointer to OpteeTaParam list
            [3]: pointer to store TA session
            [4]: pointer to store return code
 
@@ -335,7 +336,7 @@ class Optee:
            [0]: session id
            [1]: 'cancel request to' parameter
            [2]: command id
-           [3]: pointer pointer to OpteeParam list
+           [3]: pointer pointer to OpteeTaParam list
            [4]: pointer to store return code
 
     Returns:
@@ -1005,8 +1006,8 @@ class Optee:
     for _ in range(args[2]):
       attr = optee_types.OpteeUteeAttribute.create(data[off:])
       if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
-        if attr.ptr and attr.size:
-          attr.data = ta.mem_read(attr.ptr, attr.size)
+        if attr.addr and attr.size:
+          attr.data = ta.mem_read(attr.addr, attr.size)
       off += attr_size
       attrs.append(attr)
 
@@ -1084,8 +1085,8 @@ class Optee:
      args: argument list should have at least 5 elements:
            [0]: handler id to dst the crypto object
            [1]: attribute id
-           [2]: buffer ptr
-           [3]: buffer size ptr
+           [2]: buffer addr
+           [3]: buffer size addr
 
     Returns:
       optee_const.OpteeErrorCode return code
@@ -1155,8 +1156,8 @@ class Optee:
       for _ in range(args[2]):
         attr = optee_types.OpteeUteeAttribute.create(data[off:])
         if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
-          if attr.ptr and attr.size:
-            attr.data = ta.mem_read(attr.ptr, attr.size)
+          if attr.addr and attr.size:
+            attr.data = ta.mem_read(attr.addr, attr.size)
         off += attr_size
         attrs.append(attr)
 

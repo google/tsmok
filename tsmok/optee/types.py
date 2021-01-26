@@ -43,7 +43,7 @@ class OpteeObjectInfo:
                        self.data_position, int(self.handle_flags))
 
 
-class OpteeParam:
+class OpteeTaParam:
   """Defines Optee TA params type."""
 
   def __init__(self, t):
@@ -51,38 +51,42 @@ class OpteeParam:
 
   @staticmethod
   def get_type(t):
-    """Returns OpteeParam type based on OpteeParamType.
+    """Returns OpteeTaParam type based on OpteeTaParamType.
 
     Args:
-      t: OpteeParamType type to be created
+      t: OpteeTaParamType type to be created
 
     Returns:
-      Corresponding OpteeParam type
+      Corresponding OpteeTaParam type
     """
     type_map = {
-        optee_const.OpteeParamType.NONE: OpteeParamNone,
-        optee_const.OpteeParamType.VALUE_INPUT: OpteeParamValueInput,
-        optee_const.OpteeParamType.VALUE_OUTPUT: OpteeParamValueOutput,
-        optee_const.OpteeParamType.VALUE_INOUT: OpteeParamValueInOut,
-        optee_const.OpteeParamType.MEMREF_INPUT: OpteeParamMemrefInput,
-        optee_const.OpteeParamType.MEMREF_OUTPUT: OpteeParamMemrefOutput,
-        optee_const.OpteeParamType.MEMREF_INOUT: OpteeParamMemrefInOut,
+        optee_const.OpteeTaParamType.NONE: OpteeTaParamNone,
+        optee_const.OpteeTaParamType.VALUE_INPUT: OpteeTaParamValueInput,
+        optee_const.OpteeTaParamType.VALUE_OUTPUT: OpteeTaParamValueOutput,
+        optee_const.OpteeTaParamType.VALUE_INOUT: OpteeTaParamValueInOut,
+        optee_const.OpteeTaParamType.MEMREF_INPUT: OpteeTaParamMemrefInput,
+        optee_const.OpteeTaParamType.MEMREF_OUTPUT: OpteeTaParamMemrefOutput,
+        optee_const.OpteeTaParamType.MEMREF_INOUT: OpteeTaParamMemrefInOut,
     }
 
     return type_map[t]
 
+  @staticmethod
+  def convert(param):
+    raise NotImplementedError()
 
-class OpteeParamValue(OpteeParam):
-  """Base class for OpteeParam value."""
+
+class OpteeTaParamValue(OpteeTaParam):
+  """Base class for OpteeTaParam value."""
 
   def __init__(self, t, a=0, b=0):
     if t not in [
-        optee_const.OpteeParamType.VALUE_INPUT,
-        optee_const.OpteeParamType.VALUE_OUTPUT,
-        optee_const.OpteeParamType.VALUE_INOUT,
+        optee_const.OpteeTaParamType.VALUE_INPUT,
+        optee_const.OpteeTaParamType.VALUE_OUTPUT,
+        optee_const.OpteeTaParamType.VALUE_INOUT,
     ]:
       raise ValueError(f'Wrong type: {t}')
-    OpteeParam.__init__(self, t)
+    OpteeTaParam.__init__(self, t)
     self.a = a
     self.b = b
 
@@ -93,73 +97,76 @@ class OpteeParamValue(OpteeParam):
     return f'{str(self.type)}: a = 0x{self.a:08x}, b = {self.b:08x}'
 
 
-class OpteeParamValueInput(OpteeParamValue):
+class OpteeTaParamValueInput(OpteeTaParamValue):
 
   def __init__(self, a=0, b=0):
-    OpteeParamValue.__init__(self, optee_const.OpteeParamType.VALUE_INPUT, a, b)
+    OpteeTaParamValue.__init__(self, optee_const.OpteeTaParamType.VALUE_INPUT,
+                               a, b)
 
 
-class OpteeParamValueOutput(OpteeParamValue):
-
-  def __init__(self, a=0, b=0):
-    OpteeParamValue.__init__(self, optee_const.OpteeParamType.VALUE_OUTPUT, a,
-                             b)
-
-
-class OpteeParamValueInOut(OpteeParamValue):
+class OpteeTaParamValueOutput(OpteeTaParamValue):
 
   def __init__(self, a=0, b=0):
-    OpteeParamValue.__init__(self, optee_const.OpteeParamType.VALUE_INOUT, a, b)
+    OpteeTaParamValue.__init__(self, optee_const.OpteeTaParamType.VALUE_OUTPUT,
+                               a, b)
 
 
-class OpteeParamMemref(OpteeParam):
-  """Base class for OpteeParam memref."""
+class OpteeTaParamValueInOut(OpteeTaParamValue):
 
-  def __init__(self, t, ptr: int = 0, size: int = 0):
+  def __init__(self, a=0, b=0):
+    OpteeTaParamValue.__init__(self, optee_const.OpteeTaParamType.VALUE_INOUT,
+                               a, b)
+
+
+class OpteeTaParamMemref(OpteeTaParam):
+  """Base class for OpteeTaParam memref."""
+
+  def __init__(self, t, addr: int = 0, size: int = 0):
     if t not in [
-        optee_const.OpteeParamType.MEMREF_INPUT,
-        optee_const.OpteeParamType.MEMREF_OUTPUT,
-        optee_const.OpteeParamType.MEMREF_INOUT
+        optee_const.OpteeTaParamType.MEMREF_INPUT,
+        optee_const.OpteeTaParamType.MEMREF_OUTPUT,
+        optee_const.OpteeTaParamType.MEMREF_INOUT
     ]:
       raise ValueError(f'Wrong type: {t}')
-    OpteeParam.__init__(self, t)
-    self.ptr = ptr
+    OpteeTaParam.__init__(self, t)
+    self.addr = addr
     self.size = size
     self.data = None
 
   def values(self):
-    return [self.ptr, self.size]
+    return [self.addr, self.size]
 
   def __str__(self):
-    return (f'{str(self.type)}: buffer ptr = 0x{self.ptr:08x}, size = '
+    return (f'{str(self.type)}: buffer addr = 0x{self.addr:08x}, size = '
             f'{self.size} data = {self.data}')
 
 
-class OpteeParamMemrefInput(OpteeParamMemref):
+class OpteeTaParamMemrefInput(OpteeTaParamMemref):
 
-  def __init__(self, ptr=0, size=0):
-    OpteeParamMemref.__init__(self, optee_const.OpteeParamType.MEMREF_INPUT,
-                              ptr, size)
-
-
-class OpteeParamMemrefOutput(OpteeParamMemref):
-
-  def __init__(self, ptr=0, size=0):
-    OpteeParamMemref.__init__(self, optee_const.OpteeParamType.MEMREF_OUTPUT,
-                              ptr, size)
+  def __init__(self, addr=0, size=0):
+    OpteeTaParamMemref.__init__(self, optee_const.OpteeTaParamType.MEMREF_INPUT,
+                                addr, size)
 
 
-class OpteeParamMemrefInOut(OpteeParamMemref):
+class OpteeTaParamMemrefOutput(OpteeTaParamMemref):
 
-  def __init__(self, ptr=0, size=0):
-    OpteeParamMemref.__init__(self, optee_const.OpteeParamType.MEMREF_INOUT,
-                              ptr, size)
+  def __init__(self, addr=0, size=0):
+    OpteeTaParamMemref.__init__(self,
+                                optee_const.OpteeTaParamType.MEMREF_OUTPUT,
+                                addr, size)
 
 
-class OpteeParamNone(OpteeParam):
+class OpteeTaParamMemrefInOut(OpteeTaParamMemref):
+
+  def __init__(self, addr=0, size=0):
+    OpteeTaParamMemref.__init__(self, optee_const.OpteeTaParamType.MEMREF_INOUT,
+                                addr, size)
+
+
+class OpteeTaParamNone(OpteeTaParam):
 
   def __init__(self, *_):
-    OpteeParam.__init__(self, optee_const.OpteeParamType.NONE)
+    OpteeTaParam.__init__(self, optee_const.OpteeTaParamType.NONE)
 
   def values(self):
     return [0, 0]
@@ -169,23 +176,23 @@ class OpteeParamNone(OpteeParam):
 
 
 def optee_params_from_data(data):
-  """Converts OpteeParams into plain bytes."""
+  """Converts OpteeTaParams into plain bytes."""
 
   data = struct.unpack(optee_const.OPTEE_PARAMS_PARSE_FORMAT, data)
   params = []
   for i in range(optee_const.OPTEE_NUM_PARAMS):
-    t = optee_const.OpteeParamType((data[0] >> (i * 4)) & 0xf)
-    if t != optee_const.OpteeParamType.NONE:
-      params.append(OpteeParam.get_type(t)(data[1 + i * 2],
-                                           data[1 + i * 2 + 1]))
+    t = optee_const.OpteeTaParamType((data[0] >> (i * 4)) & 0xf)
+    if t != optee_const.OpteeTaParamType.NONE:
+      params.append(OpteeTaParam.get_type(t)(data[1 + i * 2],
+                                             data[1 + i * 2 + 1]))
 
   return params
 
 
-def optee_params_to_data(params: List[OpteeParam]):
-  """Converts plain bytes into OpteeParams."""
+def optee_params_to_data(params: List[OpteeTaParam]):
+  """Converts plain bytes into OpteeTaParams."""
   for i in range(optee_const.OPTEE_NUM_PARAMS - len(params)):
-    params.append(OpteeParamNone())
+    params.append(OpteeTaParamNone())
 
   param_types = 0
   values = []
@@ -465,7 +472,7 @@ class OpteeUteeAttribute:
       attr.b = b
     else:
       attr = OpteeUteeAttributeMemory()
-      attr.ptr = a
+      attr.addr = a
       attr.size = b
 
     attr.atype = optee_const.OpteeAttr(atype)
@@ -531,7 +538,7 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
       else:
         raise ValueError('Wrong type of data')
     else:
-      self.ptr = 0
+      self.addr = 0
       self.size = 0
       self.data = None
 
@@ -552,7 +559,7 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
-    self.ptr, self.size, atype = struct.unpack(self.FORMAT, data[:sz])
+    self.addr, self.size, atype = struct.unpack(self.FORMAT, data[:sz])
     if atype & optee_const.OPTEE_ATTR_BIT_VALUE:
       raise ValueError('Parsed attribute is VALUE one, not Memory')
 
@@ -561,7 +568,7 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
 
   def __str__(self):
     out = 'OpteeUteeAttributeValue:\n'
-    out += f'\tptr:  0x{self.ptr:08x}\n'
+    out += f'\tptr:  0x{self.addr:08x}\n'
     out += f'\tsize: {self.size}\n'
     out += f'\ttype: {str(self.atype)}\n'
     out += f'\tdata: {str(self.data)}\n'
@@ -667,6 +674,42 @@ class OpteeMsgParam:
     param_type = type_map[attr]
     return param_type(a, b, c)
 
+  def convert_to_ta_param(self, param: OpteeTaParam):
+    """Converts OpteeMsgParam to OpteeTaParam.
+
+    Args:
+      param: OpteeTaParam to be converted.
+
+    Returns:
+      Converted OpteeTaParam object
+
+    Raises:
+      Error exception in case of error.
+    """
+    type_map = {
+        optee_const.OpteeMsgAttrType.NONE: OpteeTaParamNone,
+        optee_const.OpteeMsgAttrType.VALUE_INPUT: OpteeTaParamValueInput,
+        optee_const.OpteeMsgAttrType.VALUE_OUTPUT: OpteeTaParamValueOutput,
+        optee_const.OpteeMsgAttrType.VALUE_INOUT: OpteeTaParamValueInOut,
+        optee_const.OpteeMsgAttrType.TMEM_INPUT: OpteeTaParamMemrefInput,
+        optee_const.OpteeMsgAttrType.TMEM_OUTPUT: OpteeTaParamMemrefOutput,
+        optee_const.OpteeMsgAttrType.TMEM_INOUT: OpteeTaParamMemrefInOut,
+    }
+
+    try:
+      ta_param = type_map[self.attr]
+    except ValueError:
+      raise error.Error(f'Can not convert Optee Msg type {self.attr} '
+                        'to OpteeTaParam')
+
+    if isinstance(self, OpteeMsgParamValue):
+      ta_param.a = self.a
+      ta_param.b = self.b
+    elif isinstance(self, OpteeMsgParamTempMem):
+      ta_param.addr = self.addr
+      ta_param.size = self.size
+      ta_param.data = self.data
+
 
 class OpteeMsgParamNone(OpteeMsgParam):
 
@@ -725,46 +768,46 @@ class OpteeMsgParamValueOutput(OpteeMsgParamValue):
 class OpteeMsgParamTempMem(OpteeMsgParam):
   """OPTEE Temporary Memory SMC message base parameter."""
 
-  def __init__(self, attr, buf_ptr, size, shm_ref):
+  def __init__(self, attr, addr, size, shm_ref):
     if attr not in [optee_const.OpteeMsgAttrType.TMEM_INOUT,
                     optee_const.OpteeMsgAttrType.TMEM_INPUT,
                     optee_const.OpteeMsgAttrType.TMEM_OUTPUT]:
       raise ValueError(f'Wrong type for OpteeMsgParamTempMem: {attr}')
     OpteeMsgParam.__init__(self, attr)
-    self.buf_ptr = buf_ptr
+    self.addr = addr
     self.size = size
     self.shm_ref = shm_ref
     self.data = None
 
   def __bytes__(self):
-    return struct.pack(self.FORMAT, self.attr, self.buf_ptr, self.size,
+    return struct.pack(self.FORMAT, self.attr, self.addr, self.size,
                        self.shm_ref)
 
   def __str__(self):
-    return (f'    {str(self.attr)}: ptr: 0x{self.buf_ptr:08x},'
+    return (f'    {str(self.attr)}: addr: 0x{self.addr:08x},'
             f'size: 0x{self.size:08x}, shm: 0x{self.shm_ref:08x}')
 
 
 class OpteeMsgParamTempMemInput(OpteeMsgParamTempMem):
 
-  def __init__(self, buf_ptr=0, size=0, shm_ref=0):
+  def __init__(self, addr=0, size=0, shm_ref=0):
     OpteeMsgParamTempMem.__init__(self, optee_const.OpteeMsgAttrType.TMEM_INPUT,
-                                  buf_ptr, size, shm_ref)
+                                  addr, size, shm_ref)
 
 
 class OpteeMsgParamTempMemInOut(OpteeMsgParamTempMem):
 
-  def __init__(self, buf_ptr=0, size=0, shm_ref=0):
+  def __init__(self, addr=0, size=0, shm_ref=0):
     OpteeMsgParamTempMem.__init__(self, optee_const.OpteeMsgAttrType.TMEM_INOUT,
-                                  buf_ptr, size, shm_ref)
+                                  addr, size, shm_ref)
 
 
 class OpteeMsgParamTempMemOutput(OpteeMsgParamTempMem):
 
-  def __init__(self, buf_ptr=0, size=0, shm_ref=0):
+  def __init__(self, addr=0, size=0, shm_ref=0):
     OpteeMsgParamTempMem.__init__(self,
                                   optee_const.OpteeMsgAttrType.TMEM_OUTPUT,
-                                  buf_ptr, size, shm_ref)
+                                  addr, size, shm_ref)
 
 
 class OpteeMsgParamRegMem(OpteeMsgParam):

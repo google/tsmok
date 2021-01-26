@@ -65,13 +65,13 @@ class TaFuzzer:
     self.log.setLevel(log_level)
 
     self._param_actions = {
-        optee_const.OpteeParamType.NONE: self._setup_none_param,
-        optee_const.OpteeParamType.VALUE_INPUT: self._setup_int_param,
-        optee_const.OpteeParamType.VALUE_OUTPUT: self._setup_int_param,
-        optee_const.OpteeParamType.VALUE_INOUT: self._setup_int_param,
-        optee_const.OpteeParamType.MEMREF_INPUT: self._setup_buffer_param,
-        optee_const.OpteeParamType.MEMREF_OUTPUT: self._setup_buffer_param,
-        optee_const.OpteeParamType.MEMREF_INOUT: self._setup_buffer_param,
+        optee_const.OpteeTaParamType.NONE: self._setup_none_param,
+        optee_const.OpteeTaParamType.VALUE_INPUT: self._setup_int_param,
+        optee_const.OpteeTaParamType.VALUE_OUTPUT: self._setup_int_param,
+        optee_const.OpteeTaParamType.VALUE_INOUT: self._setup_int_param,
+        optee_const.OpteeTaParamType.MEMREF_INPUT: self._setup_buffer_param,
+        optee_const.OpteeTaParamType.MEMREF_OUTPUT: self._setup_buffer_param,
+        optee_const.OpteeTaParamType.MEMREF_INOUT: self._setup_buffer_param,
     }
 
     self.storage = rpmb_simple.StorageRpmbSimple(log_level=self.log.level)
@@ -171,10 +171,10 @@ class TaFuzzer:
     param_list = []
     for i in range(optee_const.OPTEE_NUM_PARAMS):
       try:
-        t = optee_const.OpteeParamType((types >> (i * 4)) & 0x7)
+        t = optee_const.OpteeTaParamType((types >> (i * 4)) & 0x7)
       except ValueError:
         continue
-      param = optee_types.OpteeParam.get_type(t)()
+      param = optee_types.OpteeTaParam.get_type(t)()
       off = self._param_actions[t](param, data[offset:])
       offset += off
       param_list.append(param)

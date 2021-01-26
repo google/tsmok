@@ -102,7 +102,7 @@ class OpteeEntryFunc(enum.IntEnum):
   INVOKE_COMMAND = 2
 
 
-class OpteeParamType(enum.IntEnum):
+class OpteeTaParamType(enum.IntEnum):
   NONE = 0
   VALUE_INPUT = 1
   VALUE_OUTPUT = 2
@@ -674,7 +674,6 @@ class OpteeMsgFunc(enum.IntEnum):
   #   a0   OpteeSmcReturn.EBUSY
   #   a1-7 Preserved
   CONFIG_DEVICE_SECURE = optee_smc_fast_call_val(14)
-  VIDEO_LOAD_FW = optee_smc_fast_call_val(15)
 
 
 class OpteeSmcNsecCap(enum.IntEnum):

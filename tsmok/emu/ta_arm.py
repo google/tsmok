@@ -88,8 +88,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def open_session(
       self, sid: int,
-      params: List[optee_types.OpteeParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeParam]):
+      params: List[optee_types.OpteeTaParam]
+      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
     self._log.info('Open Session: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
@@ -103,29 +103,29 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def invoke_command(
       self, sid: int, cmd: int,
-      params: List[optee_types.OpteeParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeParam]):
+      params: List[optee_types.OpteeTaParam]
+      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
     self._log.info('Invoke Command: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     params_ptr = self.BUFFER_PTR
     if params:
-      next_ptr = params_ptr + optee_const.OPTEE_PARAMS_DATA_SIZE
+      next_addr = params_ptr + optee_const.OPTEE_PARAMS_DATA_SIZE
       # TODO(dmitryy) make this more readable
       for p in params:
-        if isinstance(p, optee_types.OpteeParamMemref):
+        if isinstance(p, optee_types.OpteeTaParamMemref):
           if p.data or p.size:
-            p.ptr = next_ptr
+            p.addr = next_addr
             if p.data:
-              left_ram = self.BUFFER_SIZE - (p.ptr - self.BUFFER_PTR)
+              left_ram = self.BUFFER_SIZE - (p.addr - self.BUFFER_PTR)
               if len(p.data) > left_ram:
                 self._log.error('Not enough memory to place parameters!')
                 return optee_const.OpteeErrorCode.ERROR_OUT_OF_MEMORY, params
               if not p.size:
                 p.size = len(p.data)
-              next_ptr += len(p.data)
+              next_addr += len(p.data)
             else:
-              next_ptr += p.size
+              next_addr += p.size
 
     self.tee.optee_params_load_to_memory(self, params_ptr, params)
 

@@ -22,15 +22,15 @@ class Ta(abc.ABC):
   @abc.abstractmethod
   def open_session(
       self, sid: int,
-      params: List[optee_types.OpteeParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeParam]):
+      params: List[optee_types.OpteeTaParam]
+      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
     raise NotImplementedError()
 
   @abc.abstractmethod
   def invoke_command(
       self, sid: int, cmd: int,
-      params: List[optee_types.OpteeParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeParam]):
+      params: List[optee_types.OpteeTaParam]
+      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
     raise NotImplementedError()
 
   @abc.abstractmethod
