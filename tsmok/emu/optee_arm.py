@@ -225,7 +225,54 @@ class OpteeArmEmu(arm.ArmEmu):
     raise NotImplementedError('RPC CMD load_ta is not supported')
 
   def _rpc_cmd_rpmb(self, msg_arg):
-    raise NotImplementedError('RPC CMD rpmb is not supported')
+    if (len(msg_arg.params) != 2 or
+        msg_arg.params[0].attr != optee_const.OpteeMsgAttrType.TMEM_INPUT or
+        msg_arg.params[1].attr != optee_const.OpteeMsgAttrType.TMEM_OUTPUT):
+      msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return bytes(msg_arg)
+
+    try:
+      rpmb = self._drivers['RPMB']
+    except KeyError:
+      msg_arg.ret = optee_const.OpteeErrorCode.ERROR_NOT_SUPPORTED
+      return bytes(msg_arg)
+
+    in_data = self.mem_read(msg_arg.params[0].addr, msg_arg.params[0].size)
+    req = optee_types.OpteeRpmbRequest(in_data)
+
+    out_data = None
+    if req.cmd == optee_const.OpteeRpmbRequestCmd.DATA_REQUEST:
+
+      # support only one request frame for now
+      if len(req.frames) != 1:
+        self._log.error('More than one request frame is not supported for now.')
+        msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      else:
+        frame = req.frames[0]
+        # check that block_count field is filled. OPTEE sometimes sets only
+        # block_count in OpteeRpmbRequest
+        if not frame.block_count and req.block_count:
+          frame.block_count = req.block_count
+        out_data = rpmb.process_frame(frame)
+
+    elif req.cmd == optee_const.OpteeRpmbRequestCmd.GET_DEV_INFO:
+      info = optee_types.OpteeRpmbDeviceInfo()
+      info.cid = rpmb.cid
+      info.rpmb_size_multi = rpmb.size_multi
+      info.rel_write_sector_count = rpmb.rel_write_sector_count
+      info.ret_code = optee_const.OpteeRpmbGetDevInfoReturn.OK
+      out_data = bytes(info)
+    else:
+      raise error.Error(f'Unknown RPMB request cmd {req.cmd}')
+
+    if msg_arg.params[1].size < len(out_data):
+      raise error.Error('RPMB GetDevInfo: Not enough space in out buffer')
+
+    if out_data:
+      self.mem_write(msg_arg.params[1].addr, out_data)
+    msg_arg.ret = optee_const.OpteeErrorCode.SUCCESS
+
+    return bytes(msg_arg)
 
   def _rpc_cmd_fs(self, msg_arg):
     raise NotImplementedError('RPC CMD fs is not supported')
