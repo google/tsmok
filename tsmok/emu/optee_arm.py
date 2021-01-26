@@ -225,6 +225,20 @@ class OpteeArmEmu(arm.ArmEmu):
                         'for now')
     return param
 
+  def _convert_from_ta_params(self, ta_params: List[optee_types.OpteeTaParam]
+                             ) -> List[optee_types.OpteeMsgParam]:
+    params = []
+    for param in ta_params:
+      params.append(param.convert_to_msg_param())
+    return params
+
+  def _convert_to_ta_params(self, ta_params: List[optee_types.OpteeTaParam]
+                           ) -> List[optee_types.OpteeMsgParam]:
+    params = []
+    for param in ta_params:
+      params.append(param.convert_to_ta_param())
+    return params
+
   def _rpc_cmd_load_ta(self, msg_arg):
     raise NotImplementedError('RPC CMD load_ta is not supported')
 
@@ -540,8 +554,10 @@ class OpteeArmEmu(arm.ArmEmu):
     return SharedMemoryConfig(ret[1], ret[2], ret[3])
 
   def open_session(self, uid: uuid.UUID, login: optee_const.OpteeMsgLoginType,
-                   params):
+                   ta_params: List[optee_types.OpteeTaParam]):
     arg = optee_types.OpteeMsgArg(optee_const.OpteeMsgCmd.OPEN_SESSION)
+
+    params = self._convert_from_ta_params(ta_params)
 
     uuid_param = optee_types.OpteeMsgParamValueInput()
     uuid_param.attr |= optee_const.OPTEE_MSG_ATTR_META
@@ -582,14 +598,15 @@ class OpteeArmEmu(arm.ArmEmu):
       for param in arg.params:
         self._param_from_memory(param)
 
-    return arg.ret, arg.session, arg.params
+    return arg.ret, arg.session, self._convert_to_ta_params(arg.params)
 
-  def invoke_command(self, session: int, cmd: int, params):
+  def invoke_command(self, session: int, cmd: int,
+                     ta_params: List[optee_types.OpteeTaParam]):
     arg = optee_types.OpteeMsgArg(optee_const.OpteeMsgCmd.INVOKE_COMMAND)
     arg.session = session
     arg.func = cmd
 
-    for param in params:
+    for param in self._convert_from_ta_params(ta_params):
       arg.params.append(self._param_to_memory(param))
 
     reg = self._memory_pool.allocate(arg.size())
@@ -615,7 +632,7 @@ class OpteeArmEmu(arm.ArmEmu):
       for param in arg.params:
         self._param_from_memory(param)
 
-    return arg.ret, arg.params
+    return arg.ret, self._convert_to_ta_params(arg.params)
 
   def close_session(self, session: int):
     arg = optee_types.OpteeMsgArg(optee_const.OpteeMsgCmd.CLOSE_SESSION)

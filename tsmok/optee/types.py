@@ -71,9 +71,40 @@ class OpteeTaParam:
 
     return type_map[t]
 
-  @staticmethod
-  def convert(param):
-    raise NotImplementedError()
+  def convert_to_msg_param(self):
+    """Converts OpteeTaParam to OpteeMsgParam.
+
+    Returns:
+      Converted OpteeTaParam object
+
+    Raises:
+      Error exception in case of error.
+    """
+    type_map = {
+        optee_const.OpteeTaParamType.NONE: OpteeMsgParamNone,
+        optee_const.OpteeTaParamType.VALUE_INPUT: OpteeMsgParamValueInput,
+        optee_const.OpteeTaParamType.VALUE_OUTPUT: OpteeMsgParamValueOutput,
+        optee_const.OpteeTaParamType.VALUE_INOUT: OpteeMsgParamValueInOut,
+        optee_const.OpteeTaParamType.MEMREF_INPUT: OpteeMsgParamTempMemInput,
+        optee_const.OpteeTaParamType.MEMREF_OUTPUT: OpteeMsgParamTempMemOutput,
+        optee_const.OpteeTaParamType.MEMREF_INOUT: OpteeMsgParamTempMemInOut,
+    }
+
+    try:
+      msg_param = type_map[self.type]()
+    except ValueError:
+      raise error.Error(f'Can not convert Optee Msg type {self.attr} '
+                        'to OpteeTaParam')
+
+    if isinstance(self, OpteeTaParamValue):
+      msg_param.a = self.a
+      msg_param.b = self.b
+    elif isinstance(self, OpteeTaParamMemref):
+      msg_param.addr = self.addr
+      msg_param.size = self.size
+      msg_param.data = self.data
+
+    return msg_param
 
 
 class OpteeTaParamValue(OpteeTaParam):
@@ -674,11 +705,8 @@ class OpteeMsgParam:
     param_type = type_map[attr]
     return param_type(a, b, c)
 
-  def convert_to_ta_param(self, param: OpteeTaParam):
+  def convert_to_ta_param(self):
     """Converts OpteeMsgParam to OpteeTaParam.
-
-    Args:
-      param: OpteeTaParam to be converted.
 
     Returns:
       Converted OpteeTaParam object
@@ -697,7 +725,7 @@ class OpteeMsgParam:
     }
 
     try:
-      ta_param = type_map[self.attr]
+      ta_param = type_map[self.attr]()
     except ValueError:
       raise error.Error(f'Can not convert Optee Msg type {self.attr} '
                         'to OpteeTaParam')
@@ -709,6 +737,8 @@ class OpteeMsgParam:
       ta_param.addr = self.addr
       ta_param.size = self.size
       ta_param.data = self.data
+
+    return ta_param
 
 
 class OpteeMsgParamNone(OpteeMsgParam):
