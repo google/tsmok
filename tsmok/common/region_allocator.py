@@ -46,26 +46,26 @@ class RegionAllocator:
       Error exception if no enough spece
     """
 
-    reg = None
-    fixed_size = round_up.round_up(size, self.aligment)
+    addr = None
     # assign max size
     r_size = self.size + 1
     for r in self._free:
-      sz = r.upper - r.lower
-      if sz >= fixed_size and sz < r_size:
-        reg = r
+      fixed_addr = round_up.round_up(r.lower, self.aligment)
+      sz = r.upper - fixed_addr
+      if sz >= size and sz < r_size:
+        addr = fixed_addr
         r_size = sz
-      if sz == fixed_size:
+      if sz == size:
         # found exact match
         break
 
-    if not reg:
+    if not addr:
       raise error.Error('RegionAllocator: failed to find free region for '
                         f'{size} bytes. Not enough space!')
 
     region = Region(self._get_key(self._allocated),
-                    reg.lower, size)
-    self._free -= portion.closedopen(reg.lower, reg.lower + size)
+                    addr, size)
+    self._free -= portion.closedopen(addr, addr + size)
     self._allocated[region.id] = region
     return region
 
