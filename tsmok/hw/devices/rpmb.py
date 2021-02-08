@@ -3,6 +3,7 @@
 import enum
 import hashlib
 import hmac
+import json
 import struct
 
 import tsmok.common.error as error
@@ -126,7 +127,8 @@ class RpmbDevice(hw.DeviceBase):
   BLOCK_SIZE = 256
   EXPIRED_COUNTER = 1<<32
 
-  def __init__(self, cid, size_multi=1, key=None, write_counter=0):
+  def __init__(self, cid=b'\x00'*CID_SIZE, size_multi=1,
+               key=None, write_counter=0):
     hw.DeviceBase.__init__(self, 'RPMB')
 
     self.size_multi = size_multi
@@ -288,4 +290,36 @@ class RpmbDevice(hw.DeviceBase):
     return self._req_handlers[frame.request](frame)
 
   def dump(self):
-    return self._data
+    try:
+      out = json.dumps({'cid': self.cid.hex(),
+                        'key': self.key.hex(),
+                        'write_counter': self.write_counter,
+                        'size_mult': self.size_multi,
+                        'rel_write_sector_count': self.rel_write_sector_count,
+                        'data': self._data.hex()}, indent=2)
+      return out
+    except TypeError:
+      raise error.Error('Failed to dump RPMB')
+
+  def load(self, data):
+    try:
+      in_data = json.loads(data)
+    except TypeError:
+      raise error.Error('Failed to parse RPMB data')
+
+    try:
+      self.key = bytes.fromhex(in_data['key'])
+      self.cid = bytes.fromhex(in_data['cid'])
+      self._data = bytes.fromhex(in_data['data'])
+      self.write_counter = in_data['write_counter']
+      self.size_multi = in_data['size_mult']
+      self.rel_write_sector_count = in_data['rel_write_sector_count']
+    except KeyError:
+      raise error.Error('Wrond RPMB data for loading')
+
+    size = self.size_multi * self.SINGLE_SIZE
+    if len(self._data) != size:
+      raise error.Error('Wrond RPMB data: incorrect data size or size_multi.')
+
+    if len(self.cid) != CID_SIZE:
+      raise error.Error('Wrond RPMB data: incorrect CID size')
