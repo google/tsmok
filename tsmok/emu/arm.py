@@ -289,18 +289,8 @@ class ArmEmu:
 
     del uc, access, value, udata  # unused by the hook
     self._log.log(const.LogLevelCustom.TRACE,
-                  '\t\t\t\t\t\t[MEM] READ at 0x%08x, size = 0x%08x', addr,
-                  size)
-
-    pc = self.get_current_address()
-    try:
-      perm = self._mem_region_access[addr]
-      if not perm & memory.MemAccessPermissions.R:
-        self.exit_with_exception(error.Error(f'0x{pc:08x}: Unallowed memory '
-                                             f'READ access: 0x{addr:08x}'))
-    except KeyError:
-      self.exit_with_exception(error.Error(f'0x{pc:08x}: Unmapped memory '
-                                           f'READ access: 0x{addr:08x}'))
+                  '\t\t\t\t\t\t[MEM][pc 0x%08x] READ at 0x%08x, '
+                  'size = 0x%08x', self.get_current_address(), addr, size)
 
   def _hook_mem_read_after(self, uc: unicorn.Uc, access: int, addr: int,
                            size: int, value: int, udata):
@@ -316,11 +306,22 @@ class ArmEmu:
     """
 
     del uc, access, udata  # unused by the hook
-    pc = self.get_current_address()
     self._log.log(
         const.LogLevelCustom.DEBUG_MEM,
         '\t\t\t\t\t\t[MEM][pc 0x%08x] READ AFTER at 0x%08x, '
-        'size = 0x%08x, value = 0x%08x', pc, addr, size, value)
+        'size = 0x%08x, value = 0x%08x', self.get_current_address(), addr,
+        size, value)
+
+    try:
+      perm = self._mem_region_access[addr]
+      if not perm & memory.MemAccessPermissions.R:
+        self.exit_with_exception(
+            error.Error(f'0x{self.get_current_address():08x}: Unallowed memory '
+                        f'READ access: 0x{addr:08x}'))
+    except KeyError:
+      self.exit_with_exception(
+          error.Error(f'0x{self.get_current_address():08x}: Unmapped memory '
+                      f'READ access: 0x{addr:08x}'))
 
   # callback for tracing write memory
   def _hook_mem_write(self, uc: unicorn.Uc, access: int, addr: int, size: int,
@@ -337,20 +338,21 @@ class ArmEmu:
     """
 
     del uc, access, udata  # unused by the hook
-    pc = self.get_current_address()
     self._log.log(
         const.LogLevelCustom.DEBUG_MEM,
         '\t\t\t\t\t\t[MEM][pc 0x%08x] WRITE at 0x%08x, size = 0x%08x, '
-        'value = 0x%08x', pc, addr, size, value)
+        'value = 0x%08x', self.get_current_address(), addr, size, value)
 
     try:
       perm = self._mem_region_access[addr]
       if not perm & memory.MemAccessPermissions.W:
-        self.exit_with_exception(error.Error(f'0x{pc:08x}: Unallowed memory '
-                                             f'WRITE access: 0x{addr:08x}'))
+        self.exit_with_exception(
+            error.Error(f'0x{self.get_current_address():08x}: Unallowed memory '
+                        f'WRITE access: 0x{addr:08x}'))
     except KeyError:
-      self.exit_with_exception(error.Error(f'0x{pc:08x}: Unmapped memory '
-                                           f'WRITE access: 0x{addr:08x}'))
+      self.exit_with_exception(
+          error.Error(f'0x{self.get_current_address():08x}: Unmapped memory '
+                      f'WRITE access: 0x{addr:08x}'))
 
   # callback for tracing invalid instructions
   def _hook_insn_invalid(self, uc: unicorn.Uc, udata) -> bool:
@@ -794,6 +796,9 @@ class ArmEmu:
     self.exception = exception
     self._ret0 = 0
     self._uc.emu_stop()
+    if self._log_level <= logging.DEBUG:
+      self._log.error('Function call stack:\n\t%s',
+                      '\n\t'.join(self._func_stack))
 
   def add_mem_read_handler(self, func, start=1, end=0):
     self._log.debug('Add Mem Read handler: 0x%08x-0x%08x', start, end)
@@ -935,6 +940,7 @@ class ArmEmu:
     Returns:
       Return value or R0 register
     """
+
     if not self.image:
       raise error.Error('Binary image for emulation was not loaded')
 
