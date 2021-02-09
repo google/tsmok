@@ -15,7 +15,6 @@ import tsmok.emu.arm as arm
 import tsmok.optee.const as optee_const
 import tsmok.optee.types as optee_types
 
-import unicorn.arm_const as unicorn_arm_const  # pylint: disable=g-import-not-at-top
 
 SharedMemoryConfig = collections.namedtuple('SharedMemoryConfig',
                                             ['addr', 'size', 'cached'])
@@ -115,7 +114,7 @@ class OpteeArmEmu(arm.ArmEmu):
   def _exit_address_callback(self, cls, access: int, addr: int, size: int):
     if addr == self.EXIT_RETURN_ADDR:
       regs = self.get_regs()
-      self.exit(regs.r0)
+      self.exit(regs.reg0)
       return True
 
     return False
@@ -130,22 +129,8 @@ class OpteeArmEmu(arm.ArmEmu):
     elif size == 8:
       self.mem_write(addr, struct.pack('<Q', value))
 
-  def _svc_mode_setup(self):
-    spsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SPSR)
-    cpsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_CPSR)
-
-    spsr = cpsr
-
-    cpsr &= ~arm.CPSR_M_MASK
-    cpsr |= arm.CpsrPeMode.SVC
-    cpsr |= arm.CpsrFieldMask.F
-    cpsr |= arm.CpsrFieldMask.I
-
-    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_CPSR, cpsr)
-    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_SPSR, spsr)
-
   def _smc_handler(self, regs) -> None:
-    call = regs.r0
+    call = regs.reg0
     args = self._get_args(regs)
     self._log.debug('SMC call 0x%08x', call)
 
@@ -177,27 +162,23 @@ class OpteeArmEmu(arm.ArmEmu):
 
     self._svc_mode_setup()
 
-    pc = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_PC)
-
-    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_PC, entry)
-    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, pc)
+    pc = self.get_current_address()
+    self.set_current_address(entry)
+    self.set_return_address(pc)
 
   def _prefetch_abort_handler(self, regs) -> None:
     self.exit_with_exception(error.Error('Prefetch Abort'))
-    spsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_SPSR)
-    cpsr = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_CPSR)
     self.dump_regs()
-    self._log.info('Current state CPSR 0x%08x, SPSR 0x%08x', cpsr, spsr)
 
   def _get_args(self, regs) -> List[int]:
     args = []
-    args.append(regs.r1)
-    args.append(regs.r2)
-    args.append(regs.r3)
-    args.append(regs.r4)
-    args.append(regs.r5)
-    args.append(regs.r6)
-    args.append(regs.r7)
+    args.append(regs.reg1)
+    args.append(regs.reg2)
+    args.append(regs.reg3)
+    args.append(regs.reg4)
+    args.append(regs.reg5)
+    args.append(regs.reg6)
+    args.append(regs.reg7)
 
     return args
 
@@ -460,6 +441,12 @@ class OpteeArmEmu(arm.ArmEmu):
 
   # External API
   # ===============================================================
+  @staticmethod
+  def check_image_syscall_compliant(img):
+    if all([img.thread_init, img.thread_clear, img.push_session]):
+      return True
+    return False
+
   def driver_add(self, drv):
     if drv.name in self._drivers:
       raise error.Error(f'Device {drv.name} already present')
@@ -720,8 +707,13 @@ class OpteeArmEmu(arm.ArmEmu):
 
   # SYSCALLS
 
-  def syscall(self, call, arg0, arg1, arg2, arg3, num_params=0,
+  def syscall(self, sid, call, arg0, arg1, arg2, arg3, num_params=0,
               base_addr=0):
+
+    self._svc_mode_setup()
+    self._thread_init()
+    self._push_session(sid)
+
     try:
       entry = self._vector[self.EntryCallType.SYSCALL]
     except KeyError:
@@ -741,19 +733,33 @@ class OpteeArmEmu(arm.ArmEmu):
 
   def _thread_deinit(self):
     self._log.debug('DeInit boot thread')
+    self.set_return_address(self.EXIT_RETURN_ADDR)
     return self.call(self.image.thread_clear, 0, 0, 0, 0)
 
-  def log_syscall(self, data: bytes, size: int = None):
+  def _push_session(self, sid: int):
+    self._log.debug('Push session 0x%x', sid)
+    self._log.error('Push session 0x%x', sid)
+    self.set_return_address(self.EXIT_RETURN_ADDR)
+    return self.call(self.image.push_session, sid, 0, 0, 0)
+
+  def _to_user_ta_ctx(self, ta_ctx: int):
+    self._log.error('Push session 0x%x', ta_ctx)
+    self.set_return_address(self.EXIT_RETURN_ADDR)
+    return self.call(self.image.to_user_ta_ctx, ta_ctx, 0, 0, 0)
+
+  def log_syscall(self, sid: int, data: bytes, size: int = None):
     sz = len(data)
-    if size is not None:
+    if size:
       sz = size
 
-    reg = self._memory_pool.allocate(sz)
-    self.mem_write(reg.addr, data)
+    if not self.check_image_syscall_compliant(self.image):
+      raise NotImplementedError('Provided image is not direct call '
+                                'syscalls compliant')
 
-    self._thread_init()
-    self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_LR, 0xFFFFFF00)
-    ret = self.syscall(optee_const.OpteeSysCalls.LOG, reg.addr, sz, None, None)
-    self._memory_pool.free(reg.id)
+    # mem_info = self.image.get_mem_info_from_session_id(self, sid)
+    # self.mem_write(0x5516000, data[:sz])
+
+    ret = self.syscall(optee_const.OpteeSysCalls.LOG, 0x100000, sz, None,
+                       None, None)
     self._thread_deinit()
     return ret

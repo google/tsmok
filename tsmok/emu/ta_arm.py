@@ -32,7 +32,7 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
   # Internal API
   # ==============================================
   def syscall_handler(self, regs) -> None:
-    syscall = regs.r7
+    syscall = regs.reg7
     args = self._get_args(regs)
     self._log.debug('[SWI] %d', syscall)
 
@@ -57,12 +57,12 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def _get_args(self, regs) -> List[int]:
     args = []
-    args.append(regs.r0)
-    args.append(regs.r1)
-    args.append(regs.r2)
-    args.append(regs.r3)
-    args_num = regs.r6
-    base_ptr = regs.r5
+    args.append(regs.reg0)
+    args.append(regs.reg1)
+    args.append(regs.reg2)
+    args.append(regs.reg3)
+    args_num = regs.reg6
+    base_ptr = regs.reg5
 
     for i in range(args_num):
       arg = struct.unpack('I', self.mem_read(base_ptr + i * 4, 4))
