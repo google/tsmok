@@ -24,7 +24,7 @@ class MemoryRegion:
 
   def __str__(self):
     return (f'Name: {self.name}; Start: 0x{self.start:08x}; '
-            f'Size: 0x{self.start:08x}; Permissions: {str(self.perm)}')
+            f'Size: 0x{self.size:08x}; Permissions: {str(self.perm)}')
 
 
 class MemoryRegionData(MemoryRegion):
