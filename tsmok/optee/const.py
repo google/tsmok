@@ -2,6 +2,7 @@
 import enum
 import struct
 import uuid
+import tsmok.common.smc as smc
 
 
 class OpteeSysCalls(enum.IntEnum):
@@ -416,81 +417,48 @@ class OpteeAttrOpsIndex(enum.IntEnum):
   VALUE = 2
 
 
-class OpteeSmcCallingConvention(enum.IntEnum):
-  FAST_CALL = 0x80000000
-  STD_CALL = 0
+def optee_smc_std_call(func_num):
+  return smc.smc_call_value(smc.SmcType.x32,
+                            smc.SmcCallingConvention.STD_CALL,
+                            smc.SmcOwner.TRUSTED_OS, func_num)
 
 
-class OpteeSmcType(enum.IntEnum):
-  x32 = 0
-  x64 = 0x40000000
+def optee_smc_fast_call_os(func_num):
+  return smc.smc_call_value(smc.SmcType.x32,
+                            smc.SmcCallingConvention.FAST_CALL,
+                            smc.SmcOwner.TRUSTED_OS, func_num)
 
 
-OPTEE_SMC_OWNER_MASK = 0x3F
-OPTEE_SMC_OWNER_SHIFT = 24
-OPTEE_SMC_FUNC_MASK = 0xFFFF
-
-
-class OpteeSmcOwner(enum.IntEnum):
-  ARCH = 0
-  CPU = 1
-  SIP = 2
-  OEM = 3
-  STANDARD = 4
-  TRUSTED_APP = 48
-  TRUSTED_OS = 50
-  TRUSTED_OS_OPTEED = 62
-  TRUSTED_OS_API = 63
-
-
-def optee_smc_call_val(ctype, calling_convention, owner, func_num):
-  return ((ctype) | (calling_convention) |
-          (((owner) & OPTEE_SMC_OWNER_MASK) << OPTEE_SMC_OWNER_SHIFT) |
-          ((func_num) & OPTEE_SMC_FUNC_MASK))
-
-
-def optee_smc_std_call_val(func_num):
-  return optee_smc_call_val(OpteeSmcType.x32,
-                            OpteeSmcCallingConvention.STD_CALL,
-                            OpteeSmcOwner.TRUSTED_OS, func_num)
-
-
-def optee_smc_fast_call_val(func_num):
-  return optee_smc_call_val(OpteeSmcType.x32,
-                            OpteeSmcCallingConvention.FAST_CALL,
-                            OpteeSmcOwner.TRUSTED_OS, func_num)
+def optee_smc_fast_call_api(func_num):
+  return smc.smc_call_value(smc.SmcType.x32,
+                            smc.SmcCallingConvention.FAST_CALL,
+                            smc.SmcOwner.TRUSTED_OS_API, func_num)
 
 
 class OpteeMsgFunc(enum.IntEnum):
   """OPTEE SMC message call types."""
 
-  CALLS_COUNT = optee_smc_call_val(OpteeSmcType.x32,
-                                   OpteeSmcCallingConvention.FAST_CALL,
-                                   OpteeSmcOwner.TRUSTED_OS_API, 0xFF00)
+  CALLS_COUNT = optee_smc_fast_call_api(0xFF00)
   # Return the following UID if using API specified in this file without
   # further extensions:
   # 384fb3e0-e7f8-11e3-af63-0002a5d5c51b.
   # Represented in OPTEE_API_UID
-  CALLS_UID = optee_smc_call_val(OpteeSmcType.x32,
-                                 OpteeSmcCallingConvention.FAST_CALL,
-                                 OpteeSmcOwner.TRUSTED_OS_API, 0xFF01)
+  CALLS_UID = optee_smc_fast_call_api(0xFF01)
   # Returns 2.0 if using API specified in this file without further
   # extensions. represented in 2 32-bit words in optee call revision major
   # and minor
-  CALLS_REVISION = optee_smc_call_val(OpteeSmcType.x32,
-                                      OpteeSmcCallingConvention.FAST_CALL,
-                                      OpteeSmcOwner.TRUSTED_OS_API, 0xFF03)
+  CALLS_REVISION = optee_smc_fast_call_api(0xFF03)
   # Get UUID of Trusted OS.
   # Used by non-secure world to figure out which Trusted OS is installed.
   # Note that returned UUID is the UUID of the Trusted OS, not of the API.
   # Returns OPTEE_OS_UUID
-  GET_OS_UUID = optee_smc_fast_call_val(0)
+  GET_OS_UUID = optee_smc_fast_call_os(0)
   # Get revision of Trusted OS.
   # Used by non-secure world to figure out which version of the Trusted OS
   # is installed. Note that the returned revision is the revision of the
   # Trusted OS, not of the API.
   # Returns revision in 2 32-bit words
-  GET_OS_REVISION = optee_smc_fast_call_val(1)
+  GET_OS_REVISION = optee_smc_fast_call_os(1)
   # Resume from RPC (for example after processing a foreign interrupt)
   # Call register usage:
   #   a0   SMC Function ID, RETURN_FROM_RPC
@@ -504,7 +472,7 @@ class OpteeMsgFunc(enum.IntEnum):
   #   OpteeSmcReturn.RPC, Call suspended by RPC call to normal world.
   #   OpteeSmcReturn.ERESUME, Resume failed, the opaque resume
   #                  information was corrupt.
-  RETURN_FROM_RPC = optee_smc_std_call_val(3)
+  RETURN_FROM_RPC = optee_smc_std_call(3)
   # Call with struct optee_msg_arg as argument
   # Call register usage:
   #   a0   SMC Function ID, CALL_WITH_ARG
@@ -538,7 +506,7 @@ class OpteeMsgFunc(enum.IntEnum):
   #                  optee_msg_arg.
   #   OpteeSmcReturn.EBADCMD, Bad/unknown cmd in struct optee_msg_arg
   #   OpteeSmcReturn.IS_RPC(), Call suspended by RPC call to normal world.
-  CALL_WITH_ARG = optee_smc_std_call_val(4)
+  CALL_WITH_ARG = optee_smc_std_call(4)
   # Get Shared Memory Config
   # Returns the Secure/Non-secure shared memory config.
   # Call register usage:
@@ -556,7 +524,7 @@ class OpteeMsgFunc(enum.IntEnum):
   #   a0   OpteeSmcReturn.ENOTAVAIL
   #   a1-3 Not used
   #   a4-7 Preserved
-  GET_SHM_CONFIG = optee_smc_fast_call_val(7)
+  GET_SHM_CONFIG = optee_smc_fast_call_os(7)
   # Configures L2CC mutex
   # Disables, enables usage of L2CC mutex. Returns or sets physical address
   # of L2CC mutex.
@@ -582,7 +550,7 @@ class OpteeMsgFunc(enum.IntEnum):
   #        OpteeSmcReturn.EBADADDR   Bad supplied physical address
   #        OpteeSmcReturn.EBADCMD    Unsupported value in a1
   #   a1-7 Preserved
-  L2CC_MUTEX = optee_smc_fast_call_val(8)
+  L2CC_MUTEX = optee_smc_fast_call_os(8)
   # Exchanges capabilities between normal world and secure world
   # Call register usage:
   #   a0   SMC Function ID, EXCHANGE_CAPABILITIES
@@ -598,7 +566,7 @@ class OpteeMsgFunc(enum.IntEnum):
   #        world
   #   a1   bitfield of secure world capabilities OpteeSmcSecCap
   #   a2-7 Preserved
-  EXCHANGE_CAPABILITIES = optee_smc_fast_call_val(9)
+  EXCHANGE_CAPABILITIES = optee_smc_fast_call_os(9)
   # Disable and empties cache of shared memory objects
   # Secure world can cache frequently used shared memory objects, for
   # example objects used as RPC arguments. When secure world is idle this
@@ -620,7 +588,7 @@ class OpteeMsgFunc(enum.IntEnum):
   # Not idle return register usage:
   #   a0   OpteeSmcReturn.EBUSY
   #   a1-7 Preserved
-  DISABLE_SHM_CACHE = optee_smc_fast_call_val(10)
+  DISABLE_SHM_CACHE = optee_smc_fast_call_os(10)
   # Enable cache of shared memory objects
   # Secure world can cache frequently used shared memory objects, for
   # example objects used as RPC arguments. When secure world is idle this
@@ -636,7 +604,7 @@ class OpteeMsgFunc(enum.IntEnum):
   # Not idle return register usage:
   #   a0   OpteeSmcReturn.EBUSY
   #   a1-7 Preserved
-  ENABLE_SHM_CACHE = optee_smc_fast_call_val(11)
+  ENABLE_SHM_CACHE = optee_smc_fast_call_os(11)
   # Release of secondary cores
   # OP-TEE in secure world is in charge of the release process of secondary
   # cores. The Rich OS issue the this request to ask OP-TEE to boot up the
@@ -659,7 +627,7 @@ class OpteeMsgFunc(enum.IntEnum):
   # Not idle return register usage:
   #   a0   OpteeSmcReturn.EBUSY
   #   a1-7 Preserved
-  BOOT_SECONDARY = optee_smc_fast_call_val(12)
+  BOOT_SECONDARY = optee_smc_fast_call_os(12)
   # Configure secure property of devices
   # Call register usage:
   #   a0   SMC Function ID, CONFIG_DEVICE_SECURE
@@ -673,7 +641,7 @@ class OpteeMsgFunc(enum.IntEnum):
   # Not idle return register usage:
   #   a0   OpteeSmcReturn.EBUSY
   #   a1-7 Preserved
-  CONFIG_DEVICE_SECURE = optee_smc_fast_call_val(14)
+  CONFIG_DEVICE_SECURE = optee_smc_fast_call_os(14)
 
 
 class OpteeSmcNsecCap(enum.IntEnum):
