@@ -203,7 +203,7 @@ class PwArmV7mEmu(arm.ArmEmu):
 
     # allow access to FPU by default
     val = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_C1_C0_2)
-    val |= (0xf << CpacrFieldMask.CP10)
+    val |= CpacrFieldMask.CP10
     self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_C1_C0_2, val)
 
     ## enable FPU by default
