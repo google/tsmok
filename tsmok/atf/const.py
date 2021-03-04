@@ -1,6 +1,7 @@
 """ATF specific constants."""
 
 import enum
+import tsmok.common.smc as smc
 
 
 class SmcErrorCode(enum.IntEnum):
@@ -9,7 +10,7 @@ class SmcErrorCode(enum.IntEnum):
   UNKNOWN = 0xFFFFFFFF
 
 
-class SmcCall(enum.IntEnum):
+class SmcOpteeCall(enum.IntEnum):
   """SMC function IDs used when returning from TEE to the secure monitor.
 
   All SMC Function IDs indicates SMC32 Calling Convention but will carry
@@ -76,3 +77,15 @@ class SmcCall(enum.IntEnum):
 class SmcCallFlag(enum.IntFlag):
   SECURE = 1 << 0
   NON_SECURE = 1 << 1
+
+
+class SmcTrustyCall(enum.IntEnum):
+  DEBUG_PUTC = smc.smc_call_value(smc.SmcType.x32,
+                                  smc.SmcCallingConvention.FAST_CALL,
+                                  smc.SmcOwner.TRUSTED_OS_TRUSTY, 0)
+  GET_REG_BASE = smc.smc_call_value(smc.SmcType.x32,
+                                    smc.SmcCallingConvention.FAST_CALL,
+                                    smc.SmcOwner.TRUSTED_OS_TRUSTY, 1)
+  GET_REG_BASE_X64 = smc.smc_call_value(smc.SmcType.x64,
+                                        smc.SmcCallingConvention.FAST_CALL,
+                                        smc.SmcOwner.TRUSTED_OS_TRUSTY, 1)
