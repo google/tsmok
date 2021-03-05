@@ -7,7 +7,7 @@ import io
 class Image(abc.ABC):
   """Represent the loaded to emulator a binary image."""
 
-  def __init__(self, image: io.BufferedReader):
+  def __init__(self, image: io.BufferedReader, load_addr: int):
     self.name = image.name
     self.text_start = None
     self.text_end = None
@@ -15,8 +15,8 @@ class Image(abc.ABC):
     self.mem_regions = []
     self.func_symbols = dict()
 
-    self._load(image)
+    self._load(image, load_addr)
 
   @abc.abstractmethod
-  def _load(self, image) -> None:
+  def _load(self, image: io.BufferedReader, load_addr: int) -> None:
     raise NotImplementedError()

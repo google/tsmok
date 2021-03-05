@@ -15,8 +15,8 @@ class TeeElfImage(image_elf.ElfImage):
   PUSH_SESSION_FUNC = 'tee_ta_push_current_session'
   START_FUNC = '_start'
 
-  def __init__(self, image: io.BufferedReader):
-    image_elf.ElfImage.__init__(self, image)
+  def __init__(self, image: io.BufferedReader, load_addr: int = None):
+    image_elf.ElfImage.__init__(self, image, load_addr)
     self.thread_init = None
     self.thread_clear = None
     self.push_session = None
@@ -32,16 +32,14 @@ class TeeElfImage(image_elf.ElfImage):
         self.entry_point = self._convert_vaddr_to_paddr(addr)
       elif name == self.PUSH_SESSION_FUNC:
         self.push_session = self._convert_vaddr_to_paddr(addr)
-      elif name == 'to_user_ta_ctx':
-        self.to_user_ta_ctx = self._convert_vaddr_to_paddr(addr)
 
       if (self.thread_init and self.thread_clear and self.entry_point
           and self.push_session):
         break
 
-    if not (self.thread_init and self.thread_clear and self.entry_point and
-            self.push_session):
-      raise error.Error('Wrong TEE Elf: does not have all of needed function')
+    if not self.entry_point:
+      raise error.Error('Wrong TEE Elf: does not have all of '
+                        'entry point function')
 
   def _parse_sections(self, image: io.BufferedReader):
     addr, size = self._get_section_info('.text')
@@ -79,3 +77,6 @@ class TeeElfImage(image_elf.ElfImage):
 
     if not found:
       raise error.Error('Failed to find MemoryRegionData to inject data')
+
+  def get_mem_info_from_session_id(self, emu, sid: int):
+    raise NotImplementedError()

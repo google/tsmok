@@ -20,9 +20,9 @@ class PwElfImage(image_elf.ElfImage):
 
   EXIT_FUNC = 'pw_boot_PostMain'
 
-  def __init__(self, image: io.BufferedReader):
+  def __init__(self, image: io.BufferedReader, load_addr: int = None):
     self.stack_addr = None
-    image_elf.ElfImage.__init__(self, image)
+    image_elf.ElfImage.__init__(self, image, load_addr)
     self._get_exit_call()
 
   def _get_exit_call(self):

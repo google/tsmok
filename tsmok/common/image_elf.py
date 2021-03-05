@@ -5,6 +5,7 @@ import io
 import elftools.elf.constants as elf_const
 import elftools.elf.elffile as elf_file
 import elftools.elf.sections as elf_sections
+import tsmok.common.const as common_const
 import tsmok.common.error as error
 import tsmok.common.image as image_base
 import tsmok.common.memory as memory
@@ -13,8 +14,9 @@ import tsmok.common.memory as memory
 class ElfImage(image_base.Image):
   """ELF Binary Image."""
 
-  def __init__(self, image: io.BufferedReader):
-    image_base.Image.__init__(self, image)
+  def __init__(self, image: io.BufferedReader, load_addr: int):
+    self._base_addr_mod = 0
+    image_base.Image.__init__(self, image, load_addr)
 
   def _symbols(self):
     symbol_tables = [
@@ -48,7 +50,23 @@ class ElfImage(image_base.Image):
 
     return perm
 
-  def _load_segments(self):
+  def _load_segments(self, load_addr: int):
+
+    # If there are numbers of segments, `load_addr' is corresponding
+    # to address of the segment with lower address. other sigments will
+    # be located with appropriate offset.
+    if load_addr:
+      # load_addr has to be PAGE aligned
+      if load_addr & (common_const.PAGE_SIZE - 1):
+        raise error.Error('Load_addr has to be PAGE aligned')
+      # get the lowest segment address
+      min_addr = None
+      for i, seg in enumerate(self._elf.iter_segments()):
+        if seg['p_type'] == 'PT_LOAD':
+          if not min_addr or seg['p_paddr'] < min_addr:
+            min_addr = seg['p_paddr']
+      self._base_addr_mod = min_addr - load_addr
+
     for i, seg in enumerate(self._elf.iter_segments()):
       if seg['p_type'] == 'PT_LOAD':
         data = seg.data()
@@ -64,9 +82,9 @@ class ElfImage(image_base.Image):
           data += b'\x00' * gap
 
         perm = self._convert_flags_to_perm(seg['p_flags'])
-        self.mem_regions.append(memory.MemoryRegionData(f'load_segment {i}',
-                                                        paddr, data,
-                                                        perm))
+        self.mem_regions.append(
+            memory.MemoryRegionData(f'load_segment {i}',
+                                    paddr - self._base_addr_mod, data, perm))
 
   def _convert_vaddr_to_paddr(self, addr: int)-> int:
     sec = None
@@ -85,7 +103,7 @@ class ElfImage(image_base.Image):
         vaddr = seg['p_vaddr']
         paddr = seg['p_paddr']
         off = addr - vaddr
-        return paddr + off
+        return paddr + off - self._base_addr_mod
 
     raise error.Error('Section {section_name} is not belong to any segment')
 
@@ -115,8 +133,8 @@ class ElfImage(image_base.Image):
   def _parse_sections(self, image: io.BufferedReader) -> None:
     pass
 
-  def _load(self, image: io.BufferedReader) -> None:
+  def _load(self, image: io.BufferedReader, load_addr: int) -> None:
     self._elf = elf_file.ELFFile(image)
     self._load_func_symbols()
-    self._load_segments()
+    self._load_segments(load_addr)
     self._parse_sections(image)
