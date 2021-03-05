@@ -35,8 +35,6 @@ RegContext = collections.namedtuple('RegContext',
 class Emu(abc.ABC):
   """Implimentation of base ARM Emulator."""
 
-  PAGE_SIZE = 4096
-
   class MemoryAccessType(enum.IntEnum):
     """Memory Access Type in memory callbacks from Unicorn Engine."""
     READ = 16  # Memory is read from
@@ -651,8 +649,8 @@ class Emu(abc.ABC):
     self._log.debug('Map region (in): 0x%016x - 0x%016x', addr,
                     addr + size - 1)
 
-    addr_fixed = math.floor(addr / self.PAGE_SIZE) * self.PAGE_SIZE
-    size_fixed = round_up.round_up(size + addr - addr_fixed, self.PAGE_SIZE)
+    addr_fixed = math.floor(addr / const.PAGE_SIZE) * const.PAGE_SIZE
+    size_fixed = round_up.round_up(size + addr - addr_fixed, const.PAGE_SIZE)
 
     self._log.debug('Map region (fixed): 0x%016x - 0x%016x', addr_fixed,
                     addr_fixed + size_fixed - 1)
