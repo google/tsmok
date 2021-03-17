@@ -8,7 +8,6 @@ from typing import List
 import uuid
 
 import tsmok.atf.atf
-import tsmok.atf.const as atf_const
 import tsmok.common.error as error
 import tsmok.common.region_allocator as region_allocator
 import tsmok.common.smc as smc
@@ -140,9 +139,9 @@ class OpteeArmEmu(arm.ArmEmu):
       self.uc.emu_stop()
 
     try:
-      ret = self._atf.smc_handler(self, smc.SmcCallFlag.SECURE, call,
-                                  args)
-      self.set_return_code(ret)
+      regs = self._atf.smc_handler(self, smc.SmcCallFlag.SECURE, call,
+                                   args)
+      self.set_regs(regs)
       return
     except error.Error as e:
       self._log.error(e.message)
@@ -251,12 +250,12 @@ class OpteeArmEmu(arm.ArmEmu):
       return bytes(msg_arg)
 
     if not msg_arg.params[1].addr or not msg_arg.params[1].size:
-      self._log.error('Load TA %s: one of the arg is zero: addr %d, size %d',
+      self._log.debug('Load TA %s: one of the arg is zero: addr %d, size %d',
                       uid, msg_arg.params[1].addr, msg_arg.params[1].size)
       msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
       return bytes(msg_arg)
 
-    self._log.error('Load TA %s to addr 0x%08x, size %d',
+    self._log.debug('Load TA %s to addr 0x%08x, size %d',
                     uid, msg_arg.params[1].addr, msg_arg.params[1].size)
     self.mem_write(msg_arg.params[1].addr, data)
 

@@ -34,9 +34,9 @@ class Atf(abc.ABC):
   def smc_handler(self, tee, flag, call, args):
     try:
       self._log.debug('.exec. => SMC: 0x%08x', call)
-      ret = self._callbacks[call](tee, flag, args)
-      self._log.debug('.exec. <= SMC: 0x%08x ret 0x%08x', call, ret)
+      regs = self._callbacks[call](tee, flag, args)
+      self._log.debug('.exec. <= SMC: 0x%08x ret 0x%08x', call, regs.reg0)
     except KeyError:
       raise error.Error(f'Unhandled Smc call (0x{call:08x}).')
 
-    return ret
+    return regs
