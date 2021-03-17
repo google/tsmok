@@ -25,11 +25,16 @@ else:
   import unicorn as unicorn  # pylint: disable=g-import-not-at-top, disable=useless-import-alias
   import unicorn.unicorn_const as unicorn_const  # pylint: disable=g-import-not-at-top
 
-
-RegContext = collections.namedtuple('RegContext',
+RegContext = collections.namedtuple('RegContext',  # pylint: disable=unexpected-keyword-arg
                                     ['reg0', 'reg1', 'reg2', 'reg3',
                                      'reg4', 'reg5', 'reg6', 'reg7',
-                                     'reg8', 'reg9', 'reg10', 'reg11'])
+                                     'reg8', 'reg9', 'reg10', 'reg11',
+                                     'reg12', 'reg13', 'reg14', 'reg15',
+                                     'reg16', 'reg17', 'reg18', 'reg19',
+                                     'reg20', 'reg21', 'reg22', 'reg23',
+                                     'reg24', 'reg25', 'reg26', 'reg27',
+                                     'reg28', 'reg29', 'reg30'],
+                                    defaults=(None,)*31)
 
 
 class Emu(abc.ABC):
@@ -358,6 +363,8 @@ class Emu(abc.ABC):
     del uc, value, udata  # unused by the hook
     ranges = self._mem_invalid_handlers[portion.closedopen(address,
                                                            address + size)]
+    self._log.error('Invalid memory access %s at 0x%x to 0x%x',
+                    access, self.get_current_address(), address)
     if not ranges:
       access = self.MemoryAccessType(access)
       self.exit_with_exception(
@@ -450,6 +457,18 @@ class Emu(abc.ABC):
 
       Returns:
         A dict mapping a register name to its value.
+    """
+    raise NotImplementedError()
+
+  @abc.abstractmethod
+  def set_regs(self, ctx: RegContext) -> None:
+    """Set registers to RegContext.
+
+    Args:
+      ctx: RegContext to be set
+
+    Returns:
+      None.
     """
     raise NotImplementedError()
 

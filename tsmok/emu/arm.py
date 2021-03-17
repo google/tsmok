@@ -162,8 +162,45 @@ class ArmEmu(emu.Emu):
                           self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R8),
                           self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R9),
                           self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R10),
-                          self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R11))
+                          self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R11),
+                          self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_R12))
     return regs
+
+  def set_regs(self, ctx: emu.RegContext) -> None:
+    """Set registers to RegContext.
+
+    Args:
+      ctx: RegContext to be set
+
+    Returns:
+      None.
+    """
+    if ctx.reg0 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R0, ctx.reg0)
+    if ctx.reg1 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R1, ctx.reg1)
+    if ctx.reg2 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R2, ctx.reg2)
+    if ctx.reg3 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R3, ctx.reg3)
+    if ctx.reg4 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R4, ctx.reg4)
+    if ctx.reg5 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R5, ctx.reg5)
+    if ctx.reg6 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R6, ctx.reg6)
+    if ctx.reg7 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R7, ctx.reg7)
+    if ctx.reg8 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R8, ctx.reg8)
+    if ctx.reg9 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R9, ctx.reg9)
+    if ctx.reg10 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R10, ctx.reg10)
+    if ctx.reg11 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R11, ctx.reg11)
+    if ctx.reg12 is not None:
+      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R12, ctx.reg12)
 
   def get_vbar_regs(self):
     """Returns current state of VBAR registers for EL{0-3}.
