@@ -19,11 +19,11 @@ class DeviceBase(abc.ABC):
 
   def write_trace(self, emu, addr, size, value):
     del emu  # unused in this call
-    self.log.debug('Write 0x%08x-0x%08x: 0x%08x',
+    self.log.debug('Write 0x%x-0x%x: 0x%x',
                    addr, addr + size - 1, value)
 
   def read_trace(self, emu, addr, size, value):
     del emu  # unused in this call
-    self.log.debug('Read 0x%08x-0x%08x: 0x%08x',
+    self.log.debug('Read 0x%x-0x%x: 0x%x',
                    addr, addr + size - 1, value)
 
