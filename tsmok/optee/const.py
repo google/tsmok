@@ -418,21 +418,15 @@ class OpteeAttrOpsIndex(enum.IntEnum):
 
 
 def optee_smc_std_call(func_num):
-  return smc.smc_call_value(smc.SmcType.x32,
-                            smc.SmcCallingConvention.STD_CALL,
-                            smc.SmcOwner.TRUSTED_OS, func_num)
+  return smc.smc_std_call(smc.SmcOwner.TRUSTED_OS, func_num)
 
 
 def optee_smc_fast_call_os(func_num):
-  return smc.smc_call_value(smc.SmcType.x32,
-                            smc.SmcCallingConvention.FAST_CALL,
-                            smc.SmcOwner.TRUSTED_OS, func_num)
+  return smc.smc_fast_call(smc.SmcOwner.TRUSTED_OS, func_num)
 
 
 def optee_smc_fast_call_api(func_num):
-  return smc.smc_call_value(smc.SmcType.x32,
-                            smc.SmcCallingConvention.FAST_CALL,
-                            smc.SmcOwner.TRUSTED_OS_API, func_num)
+  return smc.smc_fast_call(smc.SmcOwner.TRUSTED_OS_API, func_num)
 
 
 class OpteeMsgFunc(enum.IntEnum):

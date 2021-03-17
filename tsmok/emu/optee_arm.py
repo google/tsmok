@@ -11,6 +11,7 @@ import tsmok.atf.atf
 import tsmok.atf.const as atf_const
 import tsmok.common.error as error
 import tsmok.common.region_allocator as region_allocator
+import tsmok.common.smc as smc
 import tsmok.emu.arm as arm
 import tsmok.optee.const as optee_const
 import tsmok.optee.types as optee_types
@@ -139,7 +140,7 @@ class OpteeArmEmu(arm.ArmEmu):
       self.uc.emu_stop()
 
     try:
-      ret = self._atf.smc_handler(self, atf_const.SmcCallFlag.SECURE, call,
+      ret = self._atf.smc_handler(self, smc.SmcCallFlag.SECURE, call,
                                   args)
       self.set_return_code(ret)
       return
