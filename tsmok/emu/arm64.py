@@ -3,6 +3,7 @@
 import enum
 import logging
 import capstone
+import tsmok.common.error as error
 import tsmok.emu.config as config
 import tsmok.emu.emu as emu
 
@@ -18,8 +19,8 @@ else:
 
 class PstateFieldMask(enum.IntEnum):
   """PSTATE register fields mask."""
-
-  M = 1 << 2  # 2 bits
+  SP = 1 << 0
+  M = 3 << 2  # 2 bits
   NRW = 1 << 4
   F = 1 << 6
   I = 1 << 7
@@ -34,19 +35,151 @@ class PstateFieldMask(enum.IntEnum):
 
 
 PSTATE_M_MASK = 0xf
+PSTATE_EL_OFFSET = 2
 
 
 class PstateElMode(enum.IntEnum):
-  EL0 = 0 << 2
-  EL1 = 1 << 2
-  EL2 = 2 << 2
-  EL3 = 3 << 2
+  EL0 = 0 << PSTATE_EL_OFFSET
+  EL1 = 1 << PSTATE_EL_OFFSET
+  EL2 = 2 << PSTATE_EL_OFFSET
+  EL3 = 3 << PSTATE_EL_OFFSET
 
 
 class CpacrEl1FieldMask(enum.IntEnum):
-  """CPACR register filed masks."""
+  """CPACR register bit masks."""
   FPEN = 3 << 20
   TTA = 1 << 28
+
+
+class ScrEl3(enum.IntEnum):
+  """SCR_EL3 register bit mask."""
+  NS = 1 << 0
+  IRQ = 1 << 1
+  FIQ = 1 << 2
+  EA = 1 << 3
+  SMD = 1 << 7
+  HCE = 1 << 8
+  SIF = 1 << 9
+  RW = 1 << 10
+  ST = 1 << 11
+  TWI = 1 << 12
+  TWE = 1 << 13
+
+
+class EsrFieldOffset(enum.IntEnum):
+  ISS2 = 32
+  EC = 26
+  IL = 25
+  ISS = 0
+
+
+class EsrFieldMask(enum.IntEnum):
+  ISS2 = 0x1f << EsrFieldOffset.ISS2
+  EC = 0x3f << EsrFieldOffset.EC
+  IL = 1 << EsrFieldOffset.IL
+  ISS = 0x1ffffff
+
+
+class VectorTableBase(enum.IntEnum):
+  CUR_EL_SP0 = 0x000
+  CUR_EL_SPX = 0x200
+  LOWER_EL_A64 = 0x400
+  LOWER_EL_A32 = 0x600
+
+
+class VectorTableOffset(enum.IntEnum):
+  SYNC = 0x000
+  IRQ = 0x080
+  FIQ = 0x100
+  SERROR = 0x180
+
+
+class ExceptionSyndrome(enum.IntEnum):
+  """AARCG64 exception syndromes."""
+  UNCATEGORIZED = 0x00
+  WFX_TRAP = 0x01
+  CP15RTTRAP = 0x03
+  CP15RRTTRAP = 0x04
+  CP14RTTRAP = 0x05
+  CP14DTTRAP = 0x06
+  ADVSIMDFPACCESSTRAP = 0x07
+  FPIDTRAP = 0x08
+  CP14RRTTRAP = 0x0c
+  ILLEGALSTATE = 0x0e
+  AA32_SVC = 0x11
+  AA32_HVC = 0x12
+  AA32_SMC = 0x13
+  AA64_SVC = 0x15
+  AA64_HVC = 0x16
+  AA64_SMC = 0x17
+  SYSTEMREGISTERTRAP = 0x18
+  INSNABORT = 0x20
+  INSNABORT_SAME_EL = 0x21
+  PCALIGNMENT = 0x22
+  DATAABORT = 0x24
+  DATAABORT_SAME_EL = 0x25
+  SPALIGNMENT = 0x26
+  AA32_FPTRAP = 0x28
+  AA64_FPTRAP = 0x2c
+  SERROR = 0x2f
+  BREAKPOINT = 0x30
+  BREAKPOINT_SAME_EL = 0x31
+  SOFTWARESTEP = 0x32
+  SOFTWARESTEP_SAME_EL = 0x33
+  WATCHPOINT = 0x34
+  WATCHPOINT_SAME_EL = 0x35
+  AA32_BKPT = 0x38
+  VECTORCATCH = 0x3a
+  AA64_BKPT = 0x3c
+
+
+class SctlrField(enum.IntEnum):
+  """SCRLR register bit fields."""
+  M = 1 << 0
+  A = 1 << 1
+  C = 1 << 2
+  SA = 1 << 3
+  SA0 = 1 << 4
+  CP15BEN = 1 << 5
+  NAA = 1 << 6
+  ITD = 1 << 7
+  SED = 1 << 8
+  UMA = 1 << 9
+  ENRCTX = 1 << 10
+  EOS = 1 << 11
+  I = 1 << 12
+  ENDB = 1 << 13
+  DZE = 1 << 14
+  UCT = 1 << 15
+  NTWI = 1 << 16
+  NTWE = 1 << 18
+  WXN = 1 << 19
+  TSCXT = 1 << 20
+  IESB = 1 << 21
+  EIS = 1 << 22
+  SPAN = 1 << 23
+  E0E = 1 << 24
+  EE = 1 << 25
+  UCI = 1 << 26
+  ENDA = 1 << 27
+  NTLSMD = 1 << 28
+  LSMAOE = 1 << 29
+  ENIB = 1 << 30
+  ENIA = 1 << 31
+  BT0 = 1 << 35
+  BT1 = 1 << 36
+  ITFSB = 1 << 37
+  TCF0 = 1 << 38
+  TCF = 1 << 40
+  ATA0 = 1 << 42
+  ATA = 1 << 43
+  DSSBS = 1 << 44
+  TWEDEN = 1 << 45
+  TWEDEL = 1 << 46
+  ENASR = 1 << 54
+  ENAS0 = 1 << 55
+  ENALS = 1 << 56
+  EPAN = 1 << 57
 
 
 class Arm64Emu(emu.Emu):
@@ -59,8 +192,6 @@ class Arm64Emu(emu.Emu):
     cs = capstone.Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_ARM)
     emu.Emu.__init__(self, name, uc, cs, log_level)
 
-    self.spsr = 0
-
   def _enable_vfp(self):
     val = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_CPACR_EL1)
     val |= CpacrEl1FieldMask.FPEN
@@ -69,17 +200,146 @@ class Arm64Emu(emu.Emu):
   def _svc_mode_setup(self):
     self._set_el_mode(PstateElMode.EL1)
 
-  def _set_el_mode(self, mode: PstateElMode):
+  def _set_el_mode(self, mode: int):
     pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
-
-    self.spsr = pstate
 
     pstate &= ~PSTATE_M_MASK
     pstate |= PstateElMode.EL1
-    pstate |= PstateFieldMask.F
+    pstate |= PstateFieldMask.D
+    pstate |= PstateFieldMask.A
     pstate |= PstateFieldMask.I
+    pstate |= PstateFieldMask.F
+    pstate |= mode
 
     self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_PSTATE, pstate)
+
+  def _set_aarch64_mode(self):
+    scr = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SCR_EL3)
+    scr |= ScrEl3.RW
+    self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SCR_EL3, scr)
+
+  def _allow_access_to_stimer(self):
+    scr = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SCR_EL3)
+    scr |= ScrEl3.ST
+    self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SCR_EL3, scr)
+
+  def _allow_access_ctr_el0(self):
+    sctlr = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SCTLR)
+    sctlr |= SctlrField.UCT
+    self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SCTLR, sctlr)
+
+  def _get_exception_syndrom(self, el_mode):
+    mode_esr = {
+        PstateElMode.EL1: unicorn_arm64_const.UC_ARM64_REG_ESR_EL1,
+        PstateElMode.EL2: unicorn_arm64_const.UC_ARM64_REG_ESR_EL2,
+        PstateElMode.EL3: unicorn_arm64_const.UC_ARM64_REG_ESR_EL3,
+    }
+    try:
+      val = self._uc.reg_read(mode_esr[el_mode & PstateFieldMask.M])
+    except KeyError:
+      return None
+
+    try:
+      return ExceptionSyndrome((val & EsrFieldMask.EC) >> EsrFieldOffset.EC)
+    except ValueError:
+      return None
+
+  def _get_excp_target_el_mode(self, exc):
+    pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
+
+    cur_mode = pstate & PstateFieldMask.M
+
+    target_el = {
+        # TODO(dmitryya) add IRQ and FIQ support
+        # IRQ: ???,
+        # FIQ: ???,
+        emu.Emu.ExceptionType.HVC: PstateElMode.EL2,
+        emu.Emu.ExceptionType.HYP_TRAP: PstateElMode.EL2,
+        emu.Emu.ExceptionType.SMC: PstateElMode.EL3,
+        emu.Emu.ExceptionType.VIRQ: PstateElMode.EL1,
+        emu.Emu.ExceptionType.VFIQ: PstateElMode.EL1,
+    }
+
+    try:
+      new_el = target_el[exc]
+    except KeyError:  # default value
+      new_el = max(cur_mode, PstateElMode.EL1)
+
+    return new_el | PstateFieldMask.SP
+
+  def _save_state_for_exception_call(self, new_el):
+    if new_el == PstateElMode.EL0:
+      raise error.Error('Unsupported target exception level EL0')
+
+    new_mode_regs = {
+        PstateElMode.EL1: (unicorn_arm64_const.UC_ARM64_REG_VBAR_EL1,
+                           unicorn_arm64_const.UC_ARM64_REG_SPSR_EL1,
+                           unicorn_arm64_const.UC_ARM64_REG_ELR_EL1,
+                           unicorn_arm64_const.UC_ARM64_REG_SP_EL1
+                          ),
+        PstateElMode.EL2: (unicorn_arm64_const.UC_ARM64_REG_VBAR_EL2,
+                           unicorn_arm64_const.UC_ARM64_REG_SPSR_EL2,
+                           unicorn_arm64_const.UC_ARM64_REG_ELR_EL2,
+                           unicorn_arm64_const.UC_ARM64_REG_SP_EL2
+                          ),
+        PstateElMode.EL3: (unicorn_arm64_const.UC_ARM64_REG_VBAR_EL3,
+                           unicorn_arm64_const.UC_ARM64_REG_SPSR_EL3,
+                           unicorn_arm64_const.UC_ARM64_REG_ELR_EL3,
+                           unicorn_arm64_const.UC_ARM64_REG_SP_EL3
+                          ),
+    }
+    cur_mode_sp = {
+        PstateElMode.EL0: unicorn_arm64_const.UC_ARM64_REG_SP_EL0,
+        PstateElMode.EL1: unicorn_arm64_const.UC_ARM64_REG_SP_EL1,
+        PstateElMode.EL2: unicorn_arm64_const.UC_ARM64_REG_SP_EL2,
+        PstateElMode.EL3: unicorn_arm64_const.UC_ARM64_REG_SP_EL3,
+    }
+
+    pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
+    cur_el_mode = pstate & PstateFieldMask.M
+    pstate_sp = pstate & PstateFieldMask.SP
+    aarch64 = pstate & PstateFieldMask.NRW == 0
+    cur_sp = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SP)
+    cur_pc = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PC)
+
+    regs = new_mode_regs[new_el & PstateFieldMask.M]
+    # exception handling base addr from VBAR_EL(new_el)
+    addr = self._uc.reg_read(regs[0])
+
+    if cur_el_mode < new_el:
+      if aarch64:
+        addr += VectorTableBase.LOWER_EL_A64
+      else:
+        addr += VectorTableBase.LOWER_EL_A32
+    elif pstate_sp:
+      addr += VectorTableBase.CUR_EL_SPX
+
+    if aarch64:
+      # store PSTATE to SPSR_EL(new_el)
+      self._uc.reg_write(regs[1], pstate)
+      # save current SP
+      if pstate_sp:
+        self._uc.reg_write(cur_mode_sp[cur_el_mode & PstateFieldMask.M], cur_sp)
+      else:
+        self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SP_EL0, cur_sp)
+
+      # store PC to ELR_EL(new_el)
+      self._uc.reg_write(regs[2], cur_pc)
+    else:
+      raise error.Error('ARM32 mode is not supported for now!')
+
+    # restore new SP
+    if new_el & PstateFieldMask.SP:
+      new_sp = self._uc.reg_read(regs[3])
+    else:
+      new_sp = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SP_EL0)
+
+    self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SP, new_sp)
+
+    # set new EL mode
+    self._set_el_mode(new_el)
+
+    return addr
 
   def dump_regs(self) -> None:
     pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
@@ -118,7 +378,8 @@ class Arm64Emu(emu.Emu):
         X22 0x%016x X23 0x%016x
         X24 0x%016x X25 0x%016x
         X26 0x%016x X27 0x%016x
-        X28 0x%016x
+        X28 0x%016x X29 0x%016x
+        X30 0x%016x
         PSTATE 0x%08x
         """, self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PC),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_SP),
@@ -157,6 +418,8 @@ class Arm64Emu(emu.Emu):
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X26),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X27),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X28),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X29),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X30),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE))
 
   # Internal API
@@ -179,8 +442,99 @@ class Arm64Emu(emu.Emu):
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X8),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X9),
         self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X10),
-        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X11))
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X11),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X12),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X13),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X14),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X15),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X16),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X17),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X18),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X19),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X20),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X21),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X22),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X23),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X24),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X25),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X26),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X27),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X28),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X29),
+        self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_X30))
     return regs
+
+  def set_regs(self, ctx: emu.RegContext) -> None:
+    """Set registers to RegContext.
+
+    Args:
+      ctx: RegContext to be set
+
+    Returns:
+      None.
+    """
+    if ctx.reg0 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X0, ctx.reg0)
+    if ctx.reg1 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X1, ctx.reg1)
+    if ctx.reg2 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X2, ctx.reg2)
+    if ctx.reg3 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X3, ctx.reg3)
+    if ctx.reg4 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X4, ctx.reg4)
+    if ctx.reg5 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X5, ctx.reg5)
+    if ctx.reg6 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X6, ctx.reg6)
+    if ctx.reg7 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X7, ctx.reg7)
+    if ctx.reg8 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X8, ctx.reg8)
+    if ctx.reg9 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X9, ctx.reg9)
+    if ctx.reg10 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X10, ctx.reg10)
+    if ctx.reg11 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X11, ctx.reg11)
+    if ctx.reg12 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X12, ctx.reg12)
+    if ctx.reg13 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X13, ctx.reg13)
+    if ctx.reg14 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X14, ctx.reg14)
+    if ctx.reg15 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X15, ctx.reg15)
+    if ctx.reg16 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X16, ctx.reg16)
+    if ctx.reg17 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X17, ctx.reg17)
+    if ctx.reg18 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X18, ctx.reg18)
+    if ctx.reg19 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X19, ctx.reg19)
+    if ctx.reg20 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X20, ctx.reg20)
+    if ctx.reg21 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X21, ctx.reg21)
+    if ctx.reg22 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X22, ctx.reg22)
+    if ctx.reg23 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X23, ctx.reg23)
+    if ctx.reg24 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X24, ctx.reg24)
+    if ctx.reg25 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X25, ctx.reg25)
+    if ctx.reg26 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X26, ctx.reg26)
+    if ctx.reg27 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X27, ctx.reg27)
+    if ctx.reg28 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X28, ctx.reg28)
+    if ctx.reg29 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X29, ctx.reg29)
+    if ctx.reg30 is not None:
+      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X30, ctx.reg30)
 
   def get_vbar_regs(self):
     """Returns current state of VBAR registers for EL{0-3}.
