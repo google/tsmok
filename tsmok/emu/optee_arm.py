@@ -12,6 +12,7 @@ import tsmok.common.error as error
 import tsmok.common.region_allocator as region_allocator
 import tsmok.common.smc as smc
 import tsmok.emu.arm as arm
+import tsmok.emu.emu as emu
 import tsmok.optee.const as optee_const
 import tsmok.optee.types as optee_types
 
@@ -119,7 +120,8 @@ class OpteeArmEmu(arm.ArmEmu):
 
     return False
 
-  def _workaround_vma_writer(self, emu, addr, size, value):
+  def _workaround_vma_writer(self, em, addr, size, value):
+    del em  # unused
     if size == 1:
       self.mem_write(addr, struct.pack('<B', value))
     elif size == 2:
@@ -417,7 +419,8 @@ class OpteeArmEmu(arm.ArmEmu):
           args += (0,) * (6 - len(args))
           args += (self.HYP_CNT_ID,)
 
-        ret = self.std_smc(optee_const.OpteeMsgFunc.RETURN_FROM_RPC, *args)
+        ret = self.std_smc(
+            emu.RegContext(optee_const.OpteeMsgFunc.RETURN_FROM_RPC, *args))
       except KeyError:
         self.dump_regs()
         raise error.Error('Unsupported RPC request: 0x{self._ret0:08x}')
@@ -521,7 +524,7 @@ class OpteeArmEmu(arm.ArmEmu):
     self._vector[self.EntryCallType.FIQ] = addr + 28
 
   def init(self):
-    self.call(self.image.entry_point, 0, 0, 0, 0)
+    self.call(self.image.entry_point, emu.RegContext(0, 0, 0, 0))
 
     # only interested in VBAR_EL1
     _, vbar, _, _ = self.get_vbar_regs()
@@ -531,9 +534,7 @@ class OpteeArmEmu(arm.ArmEmu):
         cfg.addr, cfg.size, self.MEMORY_ALIGNMENT)
 
   # ATF side calls
-  def fast_smc(self, cmd: int, arg0: int, arg1: int, arg2: int,
-               arg3: int = None, arg4: int = None, arg5: int = None,
-               arg6: int = None):
+  def fast_smc(self, args: emu.RegContext):
     try:
       entry = self._atf_vector[self.AtfEntryCallType.FAST_SMC]
     except KeyError:
@@ -542,12 +543,10 @@ class OpteeArmEmu(arm.ArmEmu):
     if not entry:
       raise error.Error('Optee is not initialized')
 
-    self.call(entry, cmd, arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+    self.call(entry, args)
     return (self._ret0, self._ret1, self._ret2, self._ret3)
 
-  def std_smc(self, cmd: int, arg0: int, arg1: int, arg2: int,
-              arg3: int = None, arg4: int = None, arg5: int = None,
-              arg6: int = None):
+  def std_smc(self, args: emu.RegContext):
     try:
       entry = self._atf_vector[self.AtfEntryCallType.STD_SMC]
     except KeyError:
@@ -556,33 +555,39 @@ class OpteeArmEmu(arm.ArmEmu):
     if not entry:
       raise error.Error('Optee is not initialized')
 
-    self.call(entry, cmd, arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+    self.call(entry, args)
     return (self._ret0, self._ret1, self._ret2, self._ret3)
 
   def get_call_uid(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.CALLS_UID, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.CALLS_UID,
+                                       0, 0, 0))
     return uuid.UUID(int=(ret[0] << 96) | (ret[1] << 64) | (ret[2] << 32) |
                      ret[3])
 
   def get_call_count(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.CALLS_COUNT, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.CALLS_COUNT,
+                                       0, 0, 0))
     return ret[0]
 
   def get_call_revision(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.CALLS_REVISION, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.CALLS_REVISION,
+                                       0, 0, 0))
     return ret[0], ret[1]
 
   def get_os_uid(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.GET_OS_UUID, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.GET_OS_UUID,
+                                       0, 0, 0))
     return uuid.UUID(int=(ret[0] << 96) | (ret[1] << 64) | (ret[2] << 32) |
                      ret[3])
 
   def get_os_revision(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.GET_OS_REVISION, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.GET_OS_REVISION,
+                                       0, 0, 0))
     return ret[0], ret[1]
 
   def get_shm_config(self):
-    ret = self.fast_smc(optee_const.OpteeMsgFunc.GET_SHM_CONFIG, 0, 0, 0)
+    ret = self.fast_smc(emu.RegContext(optee_const.OpteeMsgFunc.GET_SHM_CONFIG,
+                                       0, 0, 0))
     err = optee_const.OpteeSmcReturn(ret[0])
 
     if err != optee_const.OpteeSmcReturn.OK:
@@ -618,9 +623,11 @@ class OpteeArmEmu(arm.ArmEmu):
     self.mem_write(reg.addr, bytes(arg))
     arg.shm_ref = reg.id
 
-    ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
-                       (reg.addr >> 32) & 0xFFFFFFFF,
-                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+    regs = emu.RegContext(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
+                          (reg.addr >> 32) & 0xFFFFFFFF,
+                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+
+    ret = self.std_smc(regs)
     if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
@@ -652,9 +659,11 @@ class OpteeArmEmu(arm.ArmEmu):
     self.mem_write(reg.addr, bytes(arg))
     arg.shm_ref = reg.id
 
-    ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
-                       (reg.addr >> 32) & 0xFFFFFFFF,
-                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+    regs = emu.RegContext(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
+                          (reg.addr >> 32) & 0xFFFFFFFF,
+                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+
+    ret = self.std_smc(regs)
     if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
@@ -681,9 +690,11 @@ class OpteeArmEmu(arm.ArmEmu):
     self.mem_write(reg.addr, bytes(arg))
     arg.shm_ref = reg.id
 
-    ret = self.std_smc(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
-                       (reg.addr >> 32) & 0xFFFFFFFF,
-                       (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+    regs = emu.RegContext(optee_const.OpteeMsgFunc.CALL_WITH_ARG,
+                          (reg.addr >> 32) & 0xFFFFFFFF,
+                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+
+    ret = self.std_smc(regs)
     if optee_const.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
@@ -723,29 +734,29 @@ class OpteeArmEmu(arm.ArmEmu):
       raise error.Error('Optee is not initialized')
 
     self.set_return_address(self.EXIT_RETURN_ADDR)
-    return self.call(entry, arg0, arg1, arg2, arg3, None, base_addr, num_params,
-                     call)
+    return self.call(entry, emu.RegContext(arg0, arg1, arg2, arg3, None,
+                                           base_addr, num_params, call))
 
   def _thread_init(self):
     self._log.debug('Init boot thread')
     self.set_return_address(self.EXIT_RETURN_ADDR)
-    return self.call(self.image.thread_init, 0, 0, 0, 0)
+    return self.call(self.image.thread_init, emu.RegContext(0, 0, 0, 0))
 
   def _thread_deinit(self):
     self._log.debug('DeInit boot thread')
     self.set_return_address(self.EXIT_RETURN_ADDR)
-    return self.call(self.image.thread_clear, 0, 0, 0, 0)
+    return self.call(self.image.thread_clear, emu.RegContext(0, 0, 0, 0))
 
   def _push_session(self, sid: int):
     self._log.debug('Push session 0x%x', sid)
     self._log.error('Push session 0x%x', sid)
     self.set_return_address(self.EXIT_RETURN_ADDR)
-    return self.call(self.image.push_session, sid, 0, 0, 0)
+    return self.call(self.image.push_session, emu.RegContext(sid, 0, 0, 0))
 
   def _to_user_ta_ctx(self, ta_ctx: int):
     self._log.error('Push session 0x%x', ta_ctx)
     self.set_return_address(self.EXIT_RETURN_ADDR)
-    return self.call(self.image.to_user_ta_ctx, ta_ctx, 0, 0, 0)
+    return self.call(self.image.to_user_ta_ctx, emu.RegContext(ta_ctx, 0, 0, 0))
 
   def log_syscall(self, sid: int, data: bytes, size: int = None):
     sz = len(data)

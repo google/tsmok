@@ -447,6 +447,14 @@ class Emu(abc.ABC):
       exc = error.AbortError
     return exc(f'Emulation failed with error code: {str(uc_error)}')
 
+  def _cpu_get_context(self):
+    return self._uc.context_save()
+
+  def _cpu_restore_context(self, ctx):
+    if not ctx:
+      raise error.Error('CPU context is not present')
+    self._uc.context_restore(ctx)
+
   @abc.abstractmethod
   def dump_regs(self) -> None:
     raise NotImplementedError()
@@ -470,11 +478,6 @@ class Emu(abc.ABC):
     Returns:
       None.
     """
-    raise NotImplementedError()
-
-  @abc.abstractmethod
-  def _set_args_to_regs(self, arg0: int, arg1: int, arg2: int, arg3: int,
-                        arg4: int, arg5: int, arg6: int, arg7: int) -> None:
     raise NotImplementedError()
 
   @abc.abstractmethod
@@ -854,21 +857,12 @@ class Emu(abc.ABC):
       raise error.Error(f'afl_forkserver_start failed with error: {ret}')
     return ret == unicorn_const.UC_AFL_RET_CHILD
 
-  def call(self, entry_point: int, arg0: int, arg1: int,
-           arg2: int, arg3: int, arg4: int = None, arg5: int = None,
-           arg6: int = None, arg7: int = None) -> int:
+  def call(self, entry_point: int, regs: RegContext):
     """Start emulation.
 
     Args:
       entry_point: the address to start execution from
-      arg0: Argument for specific call
-      arg1: Argument for specific call
-      arg2: Argument for specific call
-      arg3: Argument for specific call
-      arg4: Argument for specific call
-      arg5: Argument for specific call
-      arg6: Argument for specific call
-      arg7: Argument for specific call
+      regs: RegContext to be set in registers
 
     Returns:
       Return value of specific entry point call
@@ -877,7 +871,7 @@ class Emu(abc.ABC):
     if not self.image:
       raise error.Error('Binary image for emulation was not loaded')
 
-    self._set_args_to_regs(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+    self.set_regs(regs)
 
     self._log.debug('Start execution from 0x%016x, SP 0x%016x',
                     entry_point, self.get_stack_address())

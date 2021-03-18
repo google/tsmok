@@ -8,6 +8,7 @@ import tsmok.common.error as error
 import tsmok.common.memory as memory
 import tsmok.common.ta_error as ta_error
 import tsmok.emu.arm as arm
+import tsmok.emu.emu as emu
 import tsmok.optee.const as optee_const
 import tsmok.optee.image_ta as image_ta
 import tsmok.optee.ta.base as ta_base
@@ -96,8 +97,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     params_ptr = self.BUFFER_PTR
     self.tee.optee_params_load_to_memory(self, params_ptr, params)
     ret = self.call(self.image.entry_point,
-                    optee_const.OpteeEntryFunc.OPEN_SESSION,
-                    sid, params_ptr, 0)
+                    emu.RegContext(optee_const.OpteeEntryFunc.OPEN_SESSION,
+                                   sid, params_ptr, 0))
 
     return ret, params
 
@@ -131,8 +132,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
     self._log.info('Invoke command %s', cmd)
     ret = self.call(self.image.entry_point,
-                    optee_const.OpteeEntryFunc.INVOKE_COMMAND,
-                    sid, params_ptr, cmd)
+                    emu.RegContext(optee_const.OpteeEntryFunc.INVOKE_COMMAND,
+                                   sid, params_ptr, cmd))
     if ret == optee_const.OpteeErrorCode.SUCCESS:
       params = self.tee.optee_params_load_from_memory(self, params_ptr)
 
@@ -143,5 +144,5 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     return self.call(self.image.entry_point,
-                     optee_const.OpteeEntryFunc.CLOSE_SESSION, sid,
-                     0, 0)
+                     emu.RegContext(optee_const.OpteeEntryFunc.CLOSE_SESSION,
+                                    sid, 0, 0))

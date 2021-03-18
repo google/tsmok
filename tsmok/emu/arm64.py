@@ -574,37 +574,3 @@ class Arm64Emu(emu.Emu):
 
   def set_stack_address(self, addr: int):
     self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_SP, addr)
-
-  def reset(self):
-    pass
-
-  def _set_args_to_regs(self, arg0: int, arg1: int, arg2: int, arg3: int,
-                        arg4: int, arg5: int, arg6: int, arg7: int) -> None:
-    """Setup registers based on arguments.
-
-    Args:
-      arg0: if not None, a value to set into X0 argegister
-      arg1: if not None, a value to set into X1 argegister
-      arg2: if not None, a value to set into X2 argegister
-      arg3: if not None, a value to set into X3 argegister
-      arg4: if not None, a value to set into X4 argegister
-      arg5: if not None, a value to set into X5 argegister
-      arg6: if not None, a value to set into X6 argegister
-      arg7: if not None, a value to set into X7 argegister
-    """
-    if arg0 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X0, arg0)
-    if arg1 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X1, arg1)
-    if arg2 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X2, arg2)
-    if arg3 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X3, arg3)
-    if arg4 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X4, arg4)
-    if arg5 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X5, arg5)
-    if arg6 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X6, arg6)
-    if arg7 is not None:
-      self._uc.reg_write(unicorn_arm64_const.UC_ARM64_REG_X7, arg7)

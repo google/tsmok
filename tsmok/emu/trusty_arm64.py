@@ -145,6 +145,6 @@ class TrustyArm64Emu(arm64.Arm64Emu):
       self._rx_shm_pool = None
 
   def init(self, memsize: int):
-    self.call(self.image.entry_point, memsize, 0, 0, 0)
+    self.call(self.image.entry_point, emu.RegContext(memsize, 0, 0, 0))
     if self._ret0 != trusty_smc.SmcError.NOP_DONE:
       raise error.Error(f'Init failed with error 0x{self._ret0:x}')

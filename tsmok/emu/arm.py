@@ -278,35 +278,3 @@ class ArmEmu(emu.Emu):
 
     """
     return emu.Emu.get_instruction_at_address(self, address & ~0x1, size)
-
-  def _set_args_to_regs(self, arg0: int, arg1: int, arg2: int, arg3: int,
-                        arg4: int, arg5: int, arg6: int, arg7: int) -> None:
-    """Setup registers based on arguments.
-
-    Args:
-      arg0: if not None, a value to set into R0 argegister
-      arg1: if not None, a value to set into R1 argegister
-      arg2: if not None, a value to set into R2 argegister
-      arg3: if not None, a value to set into R3 argegister
-      arg4: if not None, a value to set into R4 argegister
-      arg5: if not None, a value to set into R5 argegister
-      arg6: if not None, a value to set into R6 argegister
-      arg7: if not None, a value to set into R7 argegister
-    """
-
-    if arg0 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R0, arg0)
-    if arg1 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R1, arg1)
-    if arg2 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R2, arg2)
-    if arg3 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R3, arg3)
-    if arg4 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R4, arg4)
-    if arg5 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R5, arg5)
-    if arg6 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R6, arg6)
-    if arg7 is not None:
-      self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R7, arg7)

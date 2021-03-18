@@ -9,6 +9,7 @@ import struct
 import tsmok.common.error as error
 import tsmok.common.memory as memory
 import tsmok.emu.arm as arm
+import tsmok.emu.emu as emu
 import tsmok.pigweed.image_elf_pw as image_elf_pw
 import unicorn.arm_const as unicorn_arm_const
 
@@ -266,7 +267,7 @@ class PwArmV7mEmu(arm.ArmEmu):
     # will be raised
     self.map_memory(0xFFFFFFE0, 32, memory.MemAccessPermissions.RX)
 
-  def _exit_call(self, emu, addr: int, size: int):
+  def _exit_call(self, em, addr: int, size: int):
     self._log.info('Execution reaches end of firmware execution flow. '
                    'Exit emulation.')
     self.exit(0)
@@ -460,7 +461,7 @@ class PwArmV7mEmu(arm.ArmEmu):
 
     self._post_exc_handlers[exc](exc_ctx.exc_aux)
 
-  def _div_0_trp(self, emu, addr, size):
+  def _div_0_trp(self, em, addr, size):
     _, mnemonic, op_str, _ = self.get_instruction_at_address(addr, size)
 
     div_mnemonics = ['udiv', 'sdiv', 'fdiv']
@@ -496,7 +497,7 @@ class PwArmV7mEmu(arm.ArmEmu):
       self._exception_raise(ArmV7mException.USAGE, UsageExcTypes.DIVBYZERO,
                             addr, size)
 
-  def _unalign_trp(self, emu, addr, size, value):
+  def _unalign_trp(self, em, addr, size, value):
     if addr & (self.MEM_WORD_ALIGNMENT - 1):
       pc = self.get_current_address()
       _, mnemonic, _, sz = self.get_instruction_at_address(pc)
@@ -523,14 +524,14 @@ class PwArmV7mEmu(arm.ArmEmu):
           self._exception_raise(ArmV7mException.USAGE, UsageExcTypes.UNALIGNED,
                                 pc, sz)
 
-  def cpacr_write(self, emu, addr, size, value):
+  def cpacr_write(self, em, addr, size, value):
     self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_C1_C0_2, value)
 
-  def cpacr_read(self, emu, addr, size, value):
+  def cpacr_read(self, em, addr, size, value):
     val = self._uc.reg_read(unicorn_arm_const.UC_ARM_REG_C1_C0_2)
     self.u32_write(addr, val)
 
-  def reg_write(self, emu, addr, size, value):
+  def reg_write(self, em, addr, size, value):
     try:
       self._log.debug('Set %s: 0x%08x', ArmV7MReg(addr), value)
       self._regs[addr] = value
@@ -538,7 +539,7 @@ class PwArmV7mEmu(arm.ArmEmu):
       self.exit_with_exception(error.Error('Write to unhandled register: '
                                            f'0x{addr:08x}'))
 
-  def reg_read(self, emu, addr, size, value):
+  def reg_read(self, em, addr, size, value):
     try:
       self._log.debug('Read %s value 0x%08x', ArmV7MReg(addr), self._regs[addr])
       self.u32_write(addr, self._regs[addr])
@@ -546,11 +547,11 @@ class PwArmV7mEmu(arm.ArmEmu):
       self.exit_with_exception(error.Error('Write from unhandled register: '
                                            f'0x{addr:08x}'))
 
-  def cfsr_write(self, emu, addr, size, value):
+  def cfsr_write(self, em, addr, size, value):
     self._log.debug('Clear CFSR bits: 0x%08x', value)
     self._regs[ArmV7MReg.CFSR] &= ~value
 
-  def ccr_write(self, emu, addr, size, value):
+  def ccr_write(self, em, addr, size, value):
     self._log.debug('Set CCR: 0x%08x', value)
     self._regs[ArmV7MReg.CCR] = value
 
@@ -594,4 +595,4 @@ class PwArmV7mEmu(arm.ArmEmu):
                                 img.exit_func + 3)
 
   def run(self):
-    self.call(self.image.entry_point, 0, 0, 0, 0)
+    self.call(self.image.entry_point, emu.RegContext(0, 0, 0, 0))
