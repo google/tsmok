@@ -11,7 +11,7 @@ import tsmok.common.memory as memory
 import tsmok.emu.arm as arm
 import tsmok.emu.emu as emu
 import tsmok.pigweed.image_elf_pw as image_elf_pw
-import unicorn.arm_const as unicorn_arm_const
+import unicornafl.arm_const as unicorn_arm_const
 
 
 class ArmV7mException(enum.IntEnum):

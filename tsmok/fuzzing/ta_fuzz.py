@@ -11,12 +11,7 @@ import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
 import tsmok.coverage.collectors as cov_collectors
 import tsmok.coverage.drcov as cov_drcov
-# WORKAROUND: use unicornafl module only for fuzzing because it is
-# not as stable as upstream unicorn module. emu.config should be before
-# emu.arm or emu.ta_arm modules
-import tsmok.emu.config as config
-config.AFL_SUPPORT = True
-import tsmok.emu.ta_arm as ta_arm   # pylint: disable=g-bad-import-order disable=g-import-not-at-top
+import tsmok.emu.ta_arm as ta_arm
 import tsmok.optee.const as optee_const
 import tsmok.optee.crypto_module as crypto_module
 import tsmok.optee.image_elf_ta as image_elf_ta

@@ -4,17 +4,10 @@ import enum
 import logging
 import capstone
 import tsmok.common.error as error
-import tsmok.emu.config as config
 import tsmok.emu.emu as emu
 
-# WORKAROUND: use unicornafl module only for fuzzing, because it is less stable
-# in complex execution cases
-if config.AFL_SUPPORT:
-  import unicornafl as unicorn   # pylint: disable=g-import-not-at-top
-  import unicornafl.arm64_const as unicorn_arm64_const  # pylint: disable=g-import-not-at-top
-else:
-  import unicorn as unicorn  # pylint: disable=g-import-not-at-top, disable=useless-import-alias
-  import unicorn.arm64_const as unicorn_arm64_const  # pylint: disable=g-import-not-at-top
+import unicornafl as unicorn   # pylint: disable=g-import-not-at-top
+import unicornafl.arm64_const as unicorn_arm64_const  # pylint: disable=g-import-not-at-top
 
 
 class PstateFieldMask(enum.IntEnum):

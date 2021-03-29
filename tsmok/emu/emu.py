@@ -14,16 +14,9 @@ import tsmok.common.image as image
 import tsmok.common.memory as memory
 import tsmok.common.round_up as round_up
 import tsmok.coverage.base as coverage
-import tsmok.emu.config as config
 
-# WORKAROUND: use unicornafl module only for fuzzing, because it is less stable
-# in complex execution cases
-if config.AFL_SUPPORT:
-  import unicornafl as unicorn   # pylint: disable=g-import-not-at-top
-  import unicornafl.unicorn_const as unicorn_const  # pylint: disable=g-import-not-at-top
-else:
-  import unicorn as unicorn  # pylint: disable=g-import-not-at-top, disable=useless-import-alias
-  import unicorn.unicorn_const as unicorn_const  # pylint: disable=g-import-not-at-top
+import unicornafl as unicorn
+import unicornafl.unicorn_const as unicorn_const
 
 RegContext = collections.namedtuple('RegContext',  # pylint: disable=unexpected-keyword-arg
                                     ['reg0', 'reg1', 'reg2', 'reg3',

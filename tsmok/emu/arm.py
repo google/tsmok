@@ -3,17 +3,10 @@
 import enum
 import logging
 import capstone
-import tsmok.emu.config as config
 import tsmok.emu.emu as emu
 
-# WORKAROUND: use unicornafl module only for fuzzing, because it is less stable
-# in complex execution cases
-if config.AFL_SUPPORT:
-  import unicornafl as unicorn   # pylint: disable=g-import-not-at-top
-  import unicornafl.arm_const as unicorn_arm_const  # pylint: disable=g-import-not-at-top
-else:
-  import unicorn as unicorn  # pylint: disable=g-import-not-at-top, disable=useless-import-alias
-  import unicorn.arm_const as unicorn_arm_const  # pylint: disable=g-import-not-at-top
+import unicornafl as unicorn
+import unicornafl.arm_const as unicorn_arm_const
 
 
 class ArmMode(enum.Enum):
