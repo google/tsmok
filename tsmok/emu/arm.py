@@ -216,15 +216,16 @@ class ArmEmu(emu.Emu):
   def _branch_instruction(self, mnemonic: str, op_str: str) -> bool:
     return mnemonic.startswith('b')
 
-  def _disasm_instruction(self, addr: int, size: int):
+  def _disasm_instruction(self, paddr: int, vaddr: int, size: int):
     """Disassembles chunk of memeory to instruction.
 
     Args:
-      addr: address of memory
+      paddr: physical address of memory
+      vaddr: virtual address of memory
       size: size of memory
     """
     cs = None
-    if addr & 0x1:  # THUMB mode
+    if paddr & 0x1:  # THUMB mode
       cs = self._cs_thumb
     else:
       if self._uc.query(unicorn.UC_QUERY_MODE) & unicorn.UC_MODE_THUMB:
@@ -232,10 +233,12 @@ class ArmEmu(emu.Emu):
       else:
         cs = self._cs
 
-    data = self._uc.mem_read(addr & ~0x1, size)
+    data = self._uc.mem_read(paddr & ~0x1, size)
 
-    for (address, size, mnemonic, op_str) in cs.disasm_lite(bytes(data), addr):
-      self._disasm_map[address] = (address, mnemonic, op_str, size)
+    off = 0
+    for (address, size, mnemonic, op_str) in cs.disasm_lite(bytes(data), paddr):
+      self._disasm_map[address] = (address, vaddr + off, mnemonic, op_str, size)
+      off += size
 
   def set_return_code(self, ret: int) -> None:
     self._uc.reg_write(unicorn_arm_const.UC_ARM_REG_R0, ret)

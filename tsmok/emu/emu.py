@@ -171,8 +171,8 @@ class Emu(abc.ABC):
 
     del uc, udata  # unused by the hook
     exc = self.ExceptionType(exc_idx)
-    self._log.debug('0x%016x: interrupted by EXCEPTION %s',
-                    self.get_current_address(), exc)
+    self._log.debug('%s: interrupted by EXCEPTION %s',
+                    self._format_addr_str(self.get_current_address()), exc)
 
     if exc in self.exception_handler:
       regs = self.get_regs()
@@ -182,140 +182,154 @@ class Emu(abc.ABC):
       self.exit_with_exception(error.Error(f'Unhandled exception: {exc}'))
 
   # callback for tracing basic blocks
-  def _hook_block(self, uc: unicorn.Uc, addr: int, size: int, udata):
+  def _hook_block(self, uc: unicorn.Uc, vaddr: int, size: int, udata,
+                  paddr: int):
     """Hook for execuded block from emulated code.
 
     Args:
       uc: [unused] Unicorn instance
-      addr: The address of block
+      vaddr: The address of block
       size: Size of the execuded block
       udata: [unused] User provided data during registering the hook
+      paddr: physical address of block
     """
 
     del uc, udata  # unused by the hook
     self._log.log(
         const.LogLevelCustom.TRACE,
-        '\t\t\t\t\t\t>>> Tracing basic block at 0x%016x, block size = 0x%016x',
-        addr, size)
+        '\t\t\t\t\t\t>>> Tracing basic block at %s, '
+        'block size = 0x%x',
+        self._format_addr_str(paddr, vaddr), size)
     if self._log_level <= logging.DEBUG:
-      self._disasm_instruction(addr, size)
+      self._disasm_instruction(paddr, vaddr, size)
 
   # callback for tracing instructions
-  def _hook_code(self, uc: unicorn.Uc, addr: int, size: int, udata):
+  def _hook_code(self, uc: unicorn.Uc, vaddr: int, size: int, udata,
+                 paddr: int):
     """Hook for execuded instruction from emulated code.
 
-    Emulation can be stopped in this hook if |addr| is not belong to any
+    Emulation can be stopped in this hook if |vaddr| is not belong to any
     memory region or a region does not have execution permission.
 
     Args:
       uc: [unused] Unicorn instance
-      addr: The address of block
+      vaddr: The address of block
       size: Size of the execuded block
       udata: [unused] User provided data during registering the hook
+      paddr: physical address of code
     """
 
     del uc, udata  # unused by the hook
     self._log.log(const.LogLevelCustom.TRACE,
-                  '\t\t\t\t\t\t>>> Code hook 0x%016x size %d SP 0x%016x', addr,
-                  size, self.get_stack_address())
-
-    # TODO(dmitryya): enable it back when Unicorn Engine will have a way
-    # to convert virtual address to physical.
-    # try:
-    #   perm = self._mem_region_access[addr]
-    #   if not perm & memory.MemAccessPermissions.R:
-    #     self.exit_with_exception(
-    #         error.Error(f'0x{self.get_current_address():016x}: Unallowed '
-    #                     f'memory READ access: 0x{addr:016x}'))
-    # except KeyError:
-    #   self.exit_with_exception(
-    #       error.Error(f'0x{self.get_current_address():016x}: Unmapped memory '
-    #                   f'READ access: 0x{addr:016x}'))
+                  '\t\t\t\t\t\t>>> Code hook %s size %d SP %s',
+                  self._format_addr_str(paddr, vaddr), size,
+                  self._format_addr_str(self.get_stack_address()))
+    try:
+      perm = self._mem_region_access[paddr]
+      if not perm & memory.MemAccessPermissions.R:
+        self.exit_with_exception(
+            error.Error('{}: Unallowed memory FETCH access: {}'.format(
+                self._format_addr_str(self.get_current_address()),
+                self._format_addr_str(paddr, vaddr))))
+    except KeyError:
+      self.exit_with_exception(
+          error.Error('{}: Unmapped memory FETCH access: {}'.format(
+              self._format_addr_str(self.get_current_address()),
+              self._format_addr_str(paddr, vaddr))))
 
     if self._log_level <= logging.DEBUG:
-      info = self._instruction_examination(addr, size)
-      self._func_symbols_handler(addr, info)
+      info = self._instruction_examination(paddr, vaddr, size)
+      self._func_symbols_handler(paddr, info)
 
   # callback for tracing read memory
-  def _hook_mem_read(self, uc: unicorn.Uc, access: int, addr: int, size: int,
-                     value: int, udata):
+  def _hook_mem_read(self, uc: unicorn.Uc, access: int, vaddr: int, size: int,
+                     value: int, udata, paddr: int):
     """Hook for read access to memory. Called before actual reading of data.
 
     Args:
       uc: [unused] Unicorn instance
       access: [unused] type of access to memory: READ, WRITE or FETCH [unused]
-      addr: The address of memory
+      vaddr: The address of memory
       size: Size of the memory chunk to be read
       value: 0x0 in this hook
       udata: [unused] User provided data during registering the hook
+      paddr: The physical address of memory
     """
 
     del uc, access, value, udata  # unused by the hook
     self._log.log(const.LogLevelCustom.TRACE,
-                  '\t\t\t\t\t\t[MEM][pc 0x%016x] READ at 0x%016x, '
-                  'size = 0x%08x', self.get_current_address(), addr, size)
+                  '\t\t\t\t\t\t[MEM][pc %s] READ at %s, size = 0x%x',
+                  self._format_addr_str(self.get_current_address()),
+                  self._format_addr_str(paddr, vaddr), size)
 
-  def _hook_mem_read_after(self, uc: unicorn.Uc, access: int, addr: int,
-                           size: int, value: int, udata):
+  def _hook_mem_read_after(self, uc: unicorn.Uc, access: int, vaddr: int,
+                           size: int, value: int, udata, paddr: int):
     """Hook for read access to memory. Called after actual reading of data.
 
     Args:
       uc: [unused] Unicorn instance
       access: [unused] type of access to memory: READ, WRITE or FETCH [unused]
-      addr: The address of memory
+      vaddr: The address of memory
       size: Size of the memory chunk to be read
       value: a value which was read from memory
       udata: [unused] User provided data during registering the hook
+      paddr: The physical address of memory
     """
 
     del uc, access, udata  # unused by the hook
     self._log.log(
         const.LogLevelCustom.DEBUG_MEM,
-        '\t\t\t\t\t\t[MEM][pc 0x%016x] READ AFTER at 0x%016x, '
-        'size = 0x%08x, value = 0x%016x', self.get_current_address(), addr,
-        size, value)
+        '\t\t\t\t\t\t[MEM][pc %s] READ AFTER at %s, size = 0x%x, value = 0x%x',
+        self._format_addr_str(self.get_current_address()),
+        self._format_addr_str(paddr, vaddr), size, value)
 
     try:
-      perm = self._mem_region_access[addr]
+      perm = self._mem_region_access[paddr]
       if not perm & memory.MemAccessPermissions.R:
         self.exit_with_exception(
-            error.Error(f'0x{self.get_current_address():x}: Unallowed '
-                        f'memory READ access: 0x{addr:x}'))
+            error.Error('{}: Unallowed memory READ access: {}'.format(
+                self._format_addr_str(self.get_current_address()),
+                self._format_addr_str(paddr, vaddr))))
     except KeyError:
       self.exit_with_exception(
-          error.Error(f'0x{self.get_current_address():x}: Unmapped memory '
-                      f'READ access: 0x{addr:x}'))
+          error.Error('{}: READ unmapped memory: {}'.format(
+              self._format_addr_str(self.get_current_address()),
+              self._format_addr_str(paddr, vaddr))))
 
   # callback for tracing write memory
-  def _hook_mem_write(self, uc: unicorn.Uc, access: int, addr: int, size: int,
-                      value: int, udata):
+  def _hook_mem_write(self, uc: unicorn.Uc, access: int, vaddr: int, size: int,
+                      value: int, udata, paddr: int):
     """Hook for write access to memory.
 
     Args:
       uc: [unused] Unicorn instance
       access: [unused] type of access to memory: READ, WRITE or FETCH [unused]
-      addr: The address of memory
+      vaddr: The address of memory
       size: Size of the memory chunk to be read
       value: A value to be written to memory
       udata: [unused] User provided data during registering the hook
+      paddr: The physical address of memory
     """
 
     del uc, access, udata  # unused by the hook
     self._log.log(
         const.LogLevelCustom.DEBUG_MEM,
-        '\t\t\t\t\t\t[MEM][pc 0x%016x] WRITE at 0x%016x, size = 0x%08x, '
-        'value = 0x%016x', self.get_current_address(), addr, size, value)
+        '\t\t\t\t\t\t[MEM][pc %s] WRITE at %s, size = 0x%x, value = 0x%x',
+        self._format_addr_str(self.get_current_address()),
+        self._format_addr_str(paddr, vaddr), size, value)
 
     try:
-      perm = self._mem_region_access[addr]
+      perm = self._mem_region_access[paddr]
       if not perm & memory.MemAccessPermissions.W:
         self.exit_with_exception(
-            error.Error(f'0x{self.get_current_address():x}: Unallowed '
-                        f'memory WRITE access: 0x{addr:x}'))
+            error.Error('{}: Unallowed memory WRITE access: {}'.format(
+                self._format_addr_str(self.get_current_address()),
+                self._format_addr_str(paddr, vaddr))))
     except KeyError:
       self.exit_with_exception(
-          error.Error(f'0x{self.get_current_address():x}: Unmapped memory '
-                      f'WRITE access: 0x{addr:x}'))
+          error.Error('{}: WRITE unmapped memory: {}'.format(
+              self._format_addr_str(self.get_current_address()),
+              self._format_addr_str(paddr, vaddr))))
 
   # callback for tracing invalid instructions
   def _hook_insn_invalid(self, uc: unicorn.Uc, udata) -> bool:
@@ -331,22 +345,24 @@ class Emu(abc.ABC):
     """
 
     del uc, udata  # unused by the hook
-    self.exit_with_exception(error.Error('Invalid instruction at addr '
-                                         f'0x{self.get_current_address():x}'))
+    self.exit_with_exception(
+        error.Error('Invalid instruction at addr '
+                    f'{self._format_addr_str(self.get_current_address())}'))
     self.dump_regs()
     return True
 
-  def _hook_invalid(self, uc: unicorn.Uc, access: int, address: int, size: int,
-                    value: int, udata) -> bool:
+  def _hook_invalid(self, uc: unicorn.Uc, access: int, vaddr: int, size: int,
+                    value: int, udata, paddr: int) -> bool:
     """Hook for invalid access to memory.
 
     Args:
       uc: [unused] Unicorn instance
       access: type of access to memory: READ, WRITE or FETCH
-      address: The address of memory
+      vaddr: The address of memory
       size: Size of the memory chunk to be read
       value: [unused] A value to be read/written from/to memory
       udata: [unused] User provided data during registering the hook
+      paddr: The physical address of memory
 
     Returns:
       True if this hook handled the invocation, False, if other hooks have to
@@ -354,37 +370,42 @@ class Emu(abc.ABC):
     """
 
     del uc, value, udata  # unused by the hook
-    ranges = self._mem_invalid_handlers[portion.closedopen(address,
-                                                           address + size)]
-    self._log.error('Invalid memory access %s at 0x%x to 0x%x',
-                    access, self.get_current_address(), address)
+    ranges = self._mem_invalid_handlers[portion.closedopen(paddr,
+                                                           paddr + size)]
+    self._log.error('Invalid memory access %s at %s to %s',
+                    access, self._format_addr_str(self.get_current_address()),
+                    self._format_addr_str(paddr, vaddr))
     if not ranges:
       access = self.MemoryAccessType(access)
       self.exit_with_exception(
-          error.Error(f'[MEM] Invalid memory access ({str(access)}) at '
-                      f'0x{self.get_current_address():x} to 0x{address:x}, '
-                      f'size {size}.'))
+          error.Error(
+              '[MEM] Invalid memory access ({}) at {} to {}, size {}'.format(
+                  str(access),
+                  self._format_addr_str(self.get_current_address()),
+                  self._format_addr_str(paddr, vaddr), size)))
       return True
     if len(ranges) != 1:
       self.exit_with_exception(
           error.Error('[MEM] Invalid memory access: Wrong number of handlers '
                       f'({len(ranges)}) for at '
-                      f'0x{self.get_current_address():x} to 0x{address:x}, '
-                      f'size = 0x{size:x}.'))
+                      f'{self._format_addr_str(self.get_current_address())} '
+                      f'to {self._format_addr_str(paddr, vaddr)}, '
+                      f'size = 0x{size:x}'))
       return True
-    return ranges.values()[0](self, access, address, size)
+    return ranges.values()[0](self, access, paddr, size)
 
-  def _hook_mem_unmapped(self, uc: unicorn.Uc, access: int, address: int,
-                         size: int, value: int, udata) -> bool:
+  def _hook_mem_unmapped(self, uc: unicorn.Uc, access: int, vaddr: int,
+                         size: int, value: int, udata, paddr: int) -> bool:
     """Hook for accessing unmapped memory.
 
     Args:
       uc: [unused] Unicorn instance
       access: type of access to memory: READ, WRITE or FETCH
-      address: The address of memory
+      vaddr: The address of memory
       size: Size of the memory chunk to be read
       value: [unused] A value to be read/written from/to memory
       udata: [unused] User provided data during registering the hook
+      paddr: The physical address of memory
 
     Returns:
       True if this hook handled the invocation, False, if other hooks have to
@@ -392,22 +413,24 @@ class Emu(abc.ABC):
     """
 
     del uc, value, udata  # unused by the hook
-    ranges = self._mem_unmapped_handlers[portion.closedopen(address,
-                                                            address + size)]
+    ranges = self._mem_unmapped_handlers[portion.closedopen([paddr,
+                                                             paddr + size])]
     if not ranges:
-      pc = self.get_current_address()
-      self.exit_with_exception(error.Error(f'[MEM] Unmapped at 0x{pc:x} to '
-                                           f'0x{address:x}, '
-                                           f'size = 0x{size:x}.'))
+      self.exit_with_exception(
+          error.Error('[MEM] Unmapped at {} to {}, size = 0x{:x}'.format(
+              self._format_addr_str(self.get_current_address()),
+              self._format_addr_str(paddr, vaddr), size)))
       return True
     if len(ranges) != 1:
-      pc = self.get_current_address()
-      self.exit_with_exception(error.Error('[MEM] Unmapped: Wrong number of '
-                                           f'handlers ({len(ranges)}) for at '
-                                           f'0x{pc:x} to 0x{address:x}, '
-                                           f'size = 0x{size:x}.'))
+      self.exit_with_exception(
+          error.Error('[MEM] Unmapped: Wrong number of handlers '
+                      '({}) for at {} to {}, size = 0x{:x}'.format(
+                          len(ranges),
+                          self._format_addr_str(self.get_current_address()),
+                          self._format_addr_str(paddr, vaddr), size)))
+
       return True
-    return ranges.values()[0](self, access, address, size)
+    return ranges.values()[0](self, access, paddr, size)
 
   def _convert_error(self, uc_error: unicorn.UcError):
     """Converts Unicorn exceptions.
@@ -485,36 +508,57 @@ class Emu(abc.ABC):
   def _svc_mode_setup(self):
     raise NotImplementedError()
 
-  def _get_disasm_str(self, addr: int) -> str:
-    s = ''
-    if addr in self._disasm_map:
-      address, mnemonic, op_str, _ = self._disasm_map[addr]
-      s = '0x{:016x}:  {:8s}    {}'.format(address, mnemonic, op_str)
+  def _format_addr_str(self, paddr: int, vaddr: int = None) -> str:
+    """Convert virtual and physical addresses into string.
 
-    return s
+    Args:
+      paddr: physical address
+      vaddr: virtual address
 
-  def _disasm_instruction(self, addr: int, size: int):
+    Returns:
+      String representation of addresses.
+    """
+    fmt = '0x{:08x}'
+    if paddr >= (1<<32):
+      fmt = '0x{:016x}'
+
+    if vaddr and paddr != vaddr:
+      vfmt = '0x{:08x}'
+      if paddr >= (1<<32):
+        vfmt = '0x{:016x}'
+      return f'{vfmt}({fmt})'.format(vaddr, paddr)
+    else:
+      return f'{fmt}'.format(paddr)
+
+  def _format_disasm_str(self, paddr: int, vaddr, mnemonic, op_str) -> str:
+    return self._format_addr_str(paddr, vaddr) + f':  {mnemonic:8s}    {op_str}'
+
+  def _disasm_instruction(self, paddr: int, vaddr: int, size: int):
     """Disassembles chunk of memeory to instruction.
 
     Args:
-      addr: address of memory
+      paddr: physical address of memory
+      vaddr: vma address of memory (physical address if MMU is not enabled)
       size: size of memory
     """
 
-    data = self._uc.mem_read(addr, size)
+    data = self._uc.mem_read(paddr, size)
 
-    for (address, size, mnemonic, op_str) in self._cs.disasm_lite(bytes(data),
-                                                                  addr):
-      self._disasm_map[address] = (address, mnemonic, op_str, size)
+    off = 0
+    for (p_addr, size, mnemonic, op_str) in self._cs.disasm_lite(bytes(data),
+                                                                 paddr):
+      self._disasm_map[p_addr] = (p_addr, vaddr + off, mnemonic, op_str, size)
+      off += size
 
-  def _instruction_examination(self, addr: int, size: int):
+  def _instruction_examination(self, paddr: int, vaddr: int, size: int):
     """Examines an instruction.
 
     Examinas an instruction by given address (dissassembles memory if needed)
     and returns information in InstrInfo format.
 
     Args:
-      addr: The address of an instruction
+      paddr: The physical address of an instruction
+      vaddr: The address of an instruction
       size: The size of the instruction.
 
     Returns:
@@ -522,17 +566,22 @@ class Emu(abc.ABC):
     """
     info = self.InstrInfo(0)
 
-    if addr not in self._disasm_map:
-      self._disasm_instruction(addr, size)
+    if paddr not in self._disasm_map:
+      self._disasm_instruction(paddr, vaddr, size)
 
-    if addr not in self._disasm_map:
-      self._log.error('No addr 0x%016x in disasm map', addr)
+    if paddr not in self._disasm_map:
+      self._log.error('No addr %s in disasm map',
+                      self._format_addr_str(paddr, vaddr))
       return info
 
-    instr_str = self._get_disasm_str(addr)
+    pa, va, mnemonic, op_str, sz = self._disasm_map[paddr]
+    # update if previously virtual address was not set
+    if pa == va and paddr != vaddr:
+      self._disasm_map[paddr] = (paddr, vaddr, mnemonic, op_str, sz)
+
+    instr_str = self._format_disasm_str(paddr, vaddr, mnemonic, op_str)
     self._log.log(const.LogLevelCustom.DEBUG_DISASM, '\t\t\t %s', instr_str)
 
-    addr, mnemonic, op_str, _ = self._disasm_map[addr]
     if self._func_return_instruction(mnemonic, op_str):
       info |= self.InstrInfo.RET
 
@@ -610,28 +659,28 @@ class Emu(abc.ABC):
 
     """
     if address not in self._disasm_map:
-      self._disasm_instruction(address, size if size else 4)
+      self._disasm_instruction(address, address, size if size else 4)
 
     if address not in self._disasm_map:
       raise error.Error(f'Failed to get instruction info at 0x{address:x}')
 
-    addr, mnemonic, op_str, sz = self._disasm_map[address]
+    paddr, _, mnemonic, op_str, sz = self._disasm_map[address]
     if size and size != sz:
       raise error.Error('Requested size does not match instruction size: '
                         f'{size} != {sz}. More than one instcruction '
                         'are there.')
-    return addr, mnemonic, op_str, sz
+    return paddr, mnemonic, op_str, sz
 
   def mem_read(self, addr: int, size: int) -> bytearray:
     self._log.log(const.LogLevelCustom.DEBUG_MEM,
-                  '\t\t\t\t\t\tMEM read 0x%016x - 0x%016x, size %d', addr,
+                  '\t\t\t\t\t\tMEM read 0x%x - 0x%x, size %d', addr,
                   addr + size - 1, size)
     return bytes(self._uc.mem_read(addr, size))
 
   def mem_write(self, addr: int, value: bytearray) -> None:
     end_addr = addr + len(value) - 1
     self._log.log(const.LogLevelCustom.DEBUG_MEM,
-                  '\t\t\t\t\t\tMEM write 0x%016x - 0x%016x, size %d', addr,
+                  '\t\t\t\t\t\tMEM write 0x%x - 0x%x, size %d', addr,
                   end_addr, len(value))
     self._uc.mem_write(addr, value)
 
@@ -661,13 +710,13 @@ class Emu(abc.ABC):
       size: The size of memory range
       perm: memory range permissions.
     """
-    self._log.debug('Map region (in): 0x%016x - 0x%016x', addr,
+    self._log.debug('Map region (in): 0x%x - 0x%x', addr,
                     addr + size - 1)
 
     addr_fixed = math.floor(addr / const.PAGE_SIZE) * const.PAGE_SIZE
     size_fixed = round_up.round_up(size + addr - addr_fixed, const.PAGE_SIZE)
 
-    self._log.debug('Map region (fixed): 0x%016x - 0x%016x', addr_fixed,
+    self._log.debug('Map region (fixed): 0x%x - 0x%x', addr_fixed,
                     addr_fixed + size_fixed - 1)
 
     res = (portion.closedopen(addr_fixed, addr_fixed + size_fixed)
@@ -684,7 +733,7 @@ class Emu(abc.ABC):
       s = i.upper - a
       if i.right == portion.CLOSED:
         s += 1
-      self._log.debug('Map region (left): 0x%016x - 0x%016x', a, a+s)
+      self._log.debug('Map region (left): 0x%x - 0x%x', a, a+s)
       if s:
         self._uc.mem_map(a, s)
 
@@ -696,7 +745,7 @@ class Emu(abc.ABC):
 
   def load_to_mem(self, name: str, addr: int, data: bytes,
                   perm: memory.MemAccessPermissions) -> None:
-    self._log.debug("Load '%s' to addr 0x%016x, size %d", name, addr, len(data))
+    self._log.debug("Load '%s' to addr 0x%x, size %d", name, addr, len(data))
     self.map_memory(addr, len(data), perm)
     self._uc.mem_write(addr, data)
 
@@ -706,7 +755,7 @@ class Emu(abc.ABC):
     self._stack_ptr = addr
     self._stack_size = size
 
-    self._log.debug('Set stack(SP) to 0x%016x', addr)
+    self._log.debug('Set stack(SP) to %s', self._format_addr_str(addr))
     self.set_stack_address(addr)
 
   def stack_reset(self):
@@ -730,37 +779,39 @@ class Emu(abc.ABC):
                       '\n\t'.join(self._func_stack))
 
   def add_mem_read_handler(self, func, start=1, end=0):
-    self._log.debug('Add Mem Read handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add Mem Read handler: 0x%x-0x%x', start, end)
     if start < end:
       self.map_memory(start, end - start + 1, memory.MemAccessPermissions.R)
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ,
-                                lambda uc, c, a, s, v, u: func(self, a, s, v),
-                                begin=start, end=end)
+    handler = self._uc.hook_add(
+        unicorn_const.UC_HOOK_MEM_READ,
+        lambda uc, c, a, s, v, u, p: func(self, p, s, v),
+        begin=start, end=end)
     self._hooks_handlers.append(handler)
     return handler
 
   def add_mem_write_handler(self, func, start=1, end=0):
-    self._log.debug('Add Mem Write handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add Mem Write handler: 0x%x-0x%x', start, end)
     if start < end:
       self.map_memory(start, end - start + 1, memory.MemAccessPermissions.W)
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_WRITE,
-                                lambda uc, c, a, s, v, u: func(self, a, s, v),
-                                begin=start, end=end)
+    handler = self._uc.hook_add(
+        unicorn_const.UC_HOOK_MEM_WRITE,
+        lambda uc, c, a, s, v, u, p: func(self, p, s, v),
+        begin=start, end=end)
     self._hooks_handlers.append(handler)
     return handler
 
   def add_code_block_handler(self, func, start=1, end=0):
-    self._log.debug('Add code block handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add code block handler: 0x%x-0x%x', start, end)
     handler = self._uc.hook_add(unicorn_const.UC_HOOK_BLOCK,
-                                lambda uc, ad, sz, u: func(self, ad, sz),
+                                lambda uc, ad, sz, u, p: func(self, p, sz),
                                 begin=start, end=end)
     self._hooks_handlers.append(handler)
     return handler
 
   def add_code_instruction_handler(self, func, start=1, end=0):
-    self._log.debug('Add code instruction handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add code instruction handler: 0x%x-0x%x', start, end)
     handler = self._uc.hook_add(unicorn_const.UC_HOOK_CODE,
-                                lambda uc, ad, sz, u: func(self, ad, sz),
+                                lambda uc, ad, sz, u, p: func(self, p, sz),
                                 begin=start, end=end)
     self._hooks_handlers.append(handler)
     return handler
@@ -772,7 +823,7 @@ class Emu(abc.ABC):
     self._hooks_handlers.remove(handler)
 
   def add_mem_unmapped_callback(self, func, start, end):
-    self._log.debug('Add mem unmapped handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add mem unmapped handler: 0x%x-0x%x', start, end)
 
     ranges = self._mem_unmapped_handlers[portion.closedopen(start, end)]
     if ranges:
@@ -781,7 +832,7 @@ class Emu(abc.ABC):
     self._mem_unmapped_handlers[portion.closedopen(start, end)] = func
 
   def add_mem_invalid_callback(self, func, start, end):
-    self._log.debug('Add mem unmapped handler: 0x%016x-0x%016x', start, end)
+    self._log.debug('Add mem unmapped handler: 0x%x-0x%x', start, end)
     ranges = self._mem_invalid_handlers[portion.closedopen(start, end)]
     if ranges:
       raise error.Error('Range overlapping is not supported for MEM invalid '
@@ -866,14 +917,16 @@ class Emu(abc.ABC):
 
     self.set_regs(regs)
 
-    self._log.debug('Start execution from 0x%016x, SP 0x%016x',
-                    entry_point, self.get_stack_address())
+    self._log.debug('Start execution from %s, SP %s',
+                    self._format_addr_str(entry_point),
+                    self._format_addr_str(self.get_stack_address()))
     try:
       self._uc.emu_start(entry_point, self.image.text_end)
     except unicorn.UcError as e:
       raise self._convert_error(e)
 
-    self._log.debug('Current SP = 0x%016x', self.get_stack_address())
+    self._log.debug('Current SP = %s',
+                    self._format_addr_str(self.get_stack_address()))
     if self.exception:
       raise self.exception
     return self._ret0
