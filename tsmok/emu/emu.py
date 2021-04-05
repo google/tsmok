@@ -923,6 +923,8 @@ class Emu(abc.ABC):
     try:
       self._uc.emu_start(entry_point, self.image.text_end)
     except unicorn.UcError as e:
+      self._log.error('UC failed at 0x%x with error %s',
+                      self.get_current_address(), e)
       raise self._convert_error(e)
 
     self._log.debug('Current SP = %s',
