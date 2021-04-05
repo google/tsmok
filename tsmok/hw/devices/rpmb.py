@@ -12,6 +12,7 @@ import tsmok.emu.arm as arm
 
 
 CID_SIZE = 16
+MMC_BLOCK_SIZE = 512
 
 
 class RpmbReturn(enum.IntEnum):
@@ -72,6 +73,10 @@ class RpmbFrame:
     else:
       self.load(data)
 
+  @staticmethod
+  def size():
+    return struct.calcsize(RpmbFrame.FORMAT)
+
   def load(self, data):
     """Parse RPMB Frame object from raw data.
 
@@ -84,18 +89,17 @@ class RpmbFrame:
     Raises:
       ValueError exception is raised if size of data is not enough for parsing.
     """
-
-    size = struct.calcsize(self.FORMAT)
-    if len(data) < size:
+    sz = self.size()
+    if len(data) < sz:
       raise ValueError('Not enough data')
 
     self.stuff, self.mac, self.data, self.nonce, self.write_counter, \
        self.address, self.block_count, self.result, req = \
-       struct.unpack(self.FORMAT, data[:size])
+       struct.unpack(self.FORMAT, data[:sz])
 
     self.request = RpmbRequestType(req)
 
-    return size
+    return sz
 
   def get_bytes_for_mac(self):
     return bytes(self)[self.MAC_CALC_OFFSET:]
@@ -165,11 +169,17 @@ class RpmbDevice(hw.DeviceBase):
     resp.result = resp_error
     return bytes(resp)
 
-  def _auth_key_prog(self, frame):
-    self.key = frame.mac
+  def _auth_key_prog(self, frames, resp_frame_count):
+    if len(frames) != 1 and resp_frame_count != 1:
+      raise error.Error('AUTH_KEY_PROG: bad parameters')
+
+    self.key = frames[0].mac
     return self._ret_error(RpmbResponseType.AUTH_KEY_PROG, RpmbReturnCode.OK)
 
-  def _read_write_counter(self, frame):
+  def _read_write_counter(self, frames, resp_frame_count):
+    if len(frames) != 1 and resp_frame_count != 1:
+      raise error.Error('READ_WRITE_COUNTER: bad parameters')
+
     if not self.key:
       return self._ret_error(RpmbResponseType.READ_WRITE_COUNTER,
                              RpmbReturnCode.ERROR_AUTH_NOT_PROG)
@@ -178,12 +188,15 @@ class RpmbDevice(hw.DeviceBase):
     resp.request = RpmbResponseType.READ_WRITE_COUNTER
     resp.result = RpmbReturnCode.OK
     resp.write_counter = self.write_counter
-    resp.nonce = frame.nonce
+    resp.nonce = frames[0].nonce
 
     resp.mac = self._calc_mac(resp.get_bytes_for_mac())
     return bytes(resp)
 
-  def _write_data(self, frame):
+  def _write_data(self, frames, resp_frame_count):
+    if resp_frame_count != 1:
+      raise error.Error('WRITE_DATA: bad parameters')
+
     if not self.key:
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_AUTH_NOT_PROG)
@@ -193,44 +206,57 @@ class RpmbDevice(hw.DeviceBase):
                              RpmbReturnCode.ERROR_WRITE |
                              RpmbReturnCode.ERROR_WRITE_COUNTER_EXPIRED)
 
-    off = frame.address * self.BLOCK_SIZE
+    off = frames[0].address * self.BLOCK_SIZE
 
     if off < 0 or off > self.size:
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_ADDRESS)
 
-    if not frame.block_count:
+    if not frames[0].block_count:
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_GENERAL)
 
-    if off + frame.block_count * self.BLOCK_SIZE > self.size:
+    if off + frames[0].block_count * self.BLOCK_SIZE > self.size:
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_GENERAL)
 
-    mac = self._calc_mac(frame.get_bytes_for_mac())
-    if mac != frame.mac:
+    data = b''
+    for f in frames:
+      data += f.get_bytes_for_mac()
+
+    if frames[-1].mac != self._calc_mac(data):
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_AUTHENTICATION)
 
-    if frame.write_counter != self.write_counter:
+    if frames[0].write_counter != self.write_counter:
       return self._ret_error(RpmbResponseType.WRITE_DATA,
                              RpmbReturnCode.ERROR_COUNTER)
 
+    data = b''
+    for f in frames:
+      data += f.data
+
     mod_data = bytearray(self._data)
-    mod_data[off:off + self.BLOCK_SIZE] = frame.data
+    mod_data[off:off + frames[0].block_count * self.BLOCK_SIZE] = data
     self._data = bytes(mod_data)
     self.write_counter += 1
 
     resp = RpmbFrame()
     resp.request = RpmbResponseType.WRITE_DATA
-    resp.address = frame.address
+    resp.address = frames[0].address
     resp.result = RpmbReturnCode.OK
     resp.write_counter = self.write_counter
     resp.mac = self._calc_mac(resp.get_bytes_for_mac())
 
     return bytes(resp)
 
-  def _read_data(self, frame):
+  def _read_data(self, frames, resp_frame_count):
+    if len(frames) != 1:
+      raise error.Error('READ_DATA: bad parameters')
+
+    frame = frames[0]
+    block_count = resp_frame_count
+
     if not self.key:
       return self._ret_error(RpmbResponseType.READ_DATA,
                              RpmbReturnCode.ERROR_AUTH_NOT_PROG)
@@ -241,13 +267,13 @@ class RpmbDevice(hw.DeviceBase):
       return self._ret_error(RpmbResponseType.READ_DATA,
                              RpmbReturnCode.ERROR_ADDRESS)
 
-    if not frame.block_count:
+    if not block_count:
       return self._ret_error(RpmbResponseType.READ_DATA,
                              RpmbReturnCode.ERROR_GENERAL)
 
-    if off + frame.block_count * self.BLOCK_SIZE > self.size:
+    if (off + block_count * self.BLOCK_SIZE) > self.size:
       return self._ret_error(RpmbResponseType.READ_DATA,
-                             RpmbReturnCode.ERROR_GENERAL)
+                             RpmbReturnCode.ERROR_ADDRESS)
 
     if frame.write_counter != 0:
       return self._ret_error(RpmbResponseType.READ_DATA,
@@ -255,7 +281,7 @@ class RpmbDevice(hw.DeviceBase):
 
     frames = []
     data = b''
-    for i in range(frame.block_count):
+    for i in range(block_count):
       resp = RpmbFrame()
       resp.request = RpmbResponseType.READ_DATA
       resp.nonce = frame.nonce
@@ -275,7 +301,7 @@ class RpmbDevice(hw.DeviceBase):
 
     return out
 
-  def _result_read(self, frames):
+  def _result_read(self, frames, resp_frame_count):
     self.log.error('RPMB Frame request RESULT_READ is not supported')
     raise NotImplementedError('RPMB Frame request RESULT_READ is not '
                               'supported')
@@ -284,10 +310,37 @@ class RpmbDevice(hw.DeviceBase):
     self.log.info('Device %s registring...', self.name)
     self.emu = emu
 
-  def process_frame(self, frame):
+  def process_frame(self, frame, resp_size):
     self.log.info('Process %s:', frame)
 
-    return self._req_handlers[frame.request](frame)
+    if resp_size & (RpmbFrame.size() - 1):
+      raise error.Error(f'RPMB: Wrong response size {resp_size}')
+    resp_frame_count = int(resp_size / RpmbFrame.size())
+
+    return self._req_handlers[frame.request]([frame], resp_frame_count)
+
+  def process_frames_data(self, data, resp_size):
+    if resp_size & (RpmbFrame.size() - 1):
+      raise error.Error(f'RPMB: Wrong response size {resp_size}')
+    resp_frame_count = int(resp_size / RpmbFrame.size())
+
+    off = 0
+    sz = len(data)
+    frames = []
+    fr_type = None
+    while off < sz:
+      frame = RpmbFrame()
+      off += frame.load(data[off:])
+      if frame.request == RpmbRequestType.RESULT_READ:
+        # do nothing for this request
+        continue
+      if not fr_type:
+        fr_type = frame.request
+      elif frame.request != fr_type:
+        raise error.Error('All frames have to be the same type')
+      frames.append(frame)
+
+    return self._req_handlers[fr_type](frames, resp_frame_count)
 
   def dump(self):
     try:

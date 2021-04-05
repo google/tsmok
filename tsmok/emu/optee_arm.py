@@ -282,18 +282,13 @@ class OpteeArmEmu(arm.ArmEmu):
 
     out_data = None
     if req.cmd == optee_const.OpteeRpmbRequestCmd.DATA_REQUEST:
-
       # support only one request frame for now
       if len(req.frames) != 1:
         self._log.error('More than one request frame is not supported for now.')
         msg_arg.ret = optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
       else:
         frame = req.frames[0]
-        # check that block_count field is filled. OPTEE sometimes sets only
-        # block_count in OpteeRpmbRequest
-        if not frame.block_count and req.block_count:
-          frame.block_count = req.block_count
-        out_data = rpmb.process_frame(frame)
+        out_data = rpmb.process_frame(frame, msg_arg.params[1].size)
 
     elif req.cmd == optee_const.OpteeRpmbRequestCmd.GET_DEV_INFO:
       info = optee_types.OpteeRpmbDeviceInfo()
