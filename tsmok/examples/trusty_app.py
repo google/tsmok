@@ -10,6 +10,8 @@ import tsmok.atf.atf_trusty as atf
 import tsmok.common.const as const
 import tsmok.common.error as error
 import tsmok.common.memory as memory
+import tsmok.coverage.collectors as cov_collectors
+import tsmok.coverage.drcov as cov_drcov
 import tsmok.emu.trusty_arm64 as trusty_arm64
 import tsmok.hw.devices.gic as hw_gic
 import tsmok.hw.devices.rpmb as hw_rpmb
@@ -92,6 +94,12 @@ def main(args):
     img = trusty_image.TrustyElfImage(args.file, LOAD_ADDR)
     tee.load(img)
 
+    if args.coverage:
+      cov = cov_drcov.DrCov(log_level=logging.DEBUG)
+      cov.add_module(tee.image)
+      collector = cov_collectors.BlockCollector(cov)
+      tee.coverage_register(collector)
+
     tee.init(RAM_SIZE)
 
     mgr = trusty_ipc.IpcManager(tee, CLIENT_ID, IPC_CHAN_SIZE)
@@ -146,8 +154,14 @@ def main(args):
       args.rpmb.seek(0)
       args.rpmb.write(rpmb.dump())
 
+    if args.coverage:
+      collector.stop()
+      args.coverage.write(cov.dump())
+    return 0
+
   except error.Error as e:
     log.error(e)
+    return -1
 
 
 def parse_args():
@@ -168,6 +182,9 @@ def parse_args():
   ag.add_argument('--rpmb_update', '-u', action='store_const',
                   required=False, const=True, default=False,
                   help='RPMB state to load.')
+
+  ag.add_argument('--coverage', '-c', type=argparse.FileType('wb'),
+                  required=False, default=None, help='coverage file')
 
   return ag.parse_args()
 
