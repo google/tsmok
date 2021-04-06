@@ -11,12 +11,14 @@ import tsmok.coverage.base as coverage
 
 class BlockEntry:
   """drcov block entry implementation."""
-  FORMAT = '<I2H'
+  FORMAT = '<Q2H'
 
   def __init__(self, start, size, mid):
     self.start = start
     self.size = size
     self.module_id = mid
+
+    self.count = 1
 
   def __eq__(self, other):
     return (self.start == other.start and
@@ -24,35 +26,40 @@ class BlockEntry:
             self.module_id == other.module_id)
 
   def __bytes__(self):
-    return struct.pack(self.FORMAT, self.start, self.size, self.module_id)
+    return struct.pack(self.FORMAT, self.start, self.size,
+                       self.module_id) * self.count
 
   def __str__(self):
     return (f'{self.module_id}: 0x{self.start:08x}:'
-            f'0x{self.start + self.size:08x}\n')
+            f'0x{self.start + self.size:08x}\n') * self.count
 
 
 class ModuleEntry:
   """drcov module entry implementation."""
 
   def __init__(self, name: str, start: int, end: int, mid: int,
-               checksum: bytes):
+               checksum: bytes, load_offset: int = None):
     self.name = name
     self.start = start
     self.end = end
     self.id = mid
     self.checksum = checksum
+    self.load_offset = load_offset
 
   def __eq__(self, other):
     return (self.start == other.start and
             self.end == other.end and
-            self.checksum == other.checksum)
+            self.checksum == other.checksum and
+            self.load_offset == other.load_offset)
 
   def __str__(self):
     return (f'Module {self.id} \'{self.name}\': '
             f'0x{self.start:08x}-0x{self.end:08x}')
 
   def __bytes__(self):
-    return (f'{self.id}, {self.start}, {self.end}, 0, {self.checksum}, 0, '
+    start = self.start + self.load_offset
+    end = self.end + self.load_offset
+    return (f'{self.id}, {start}, {end}, 0, {self.checksum}, 0, '
             f'{self.name}\n').encode()
 
 
@@ -70,25 +77,33 @@ class DrCov(coverage.CoverageFormatBase):
 
   def __init__(self, log_level=logging.ERROR):
     coverage.CoverageFormatBase.__init__(self, 'DRCOV', log_level)
-    self.blocks = []
     self.modules = dict()
+    self._blocks = dict()
 
-  def add_module(self, name, start, end, checksum: bytes = b'0'):
+  def add_module(self, img, checksum: bytes = b'0'):
     mid = len(self.modules)
-    name = os.path.basename(name)
-    module = ModuleEntry(name, start, end, mid, checksum.hex())
+    name = os.path.basename(img.name)
+    module = ModuleEntry(name, img.text_start, img.text_end, mid,
+                         checksum.hex(), img.load_offset)
     if module not in self.modules.values():
       self.modules[mid] = module
+    else:
+      self.log.warning('Image %s was already added!', img.name)
 
   def add_block(self, addr, size):
+    mid = self.UNKNOWN_ID
+    start = addr
     for module in self.modules.values():
       if module.start <= addr <= module.end:
-        block = BlockEntry(addr - module.start, size, module.id)
-        self.blocks.append(block)
-        return
+        mid = module.id
+        start = addr - module.start
+        break
 
-    # did not find module. use the 'unknown'
-    self.blocks.append(BlockEntry(addr, size, self.UNKNOWN_ID))
+    try:
+      bl = self._blocks[(start, size)]
+      bl.count += 1
+    except KeyError:
+      self._blocks[(start, size)] = BlockEntry(start, size, mid)
 
   def dump(self) -> bytes:
     self.log.debug('Dump coverage information')
@@ -100,9 +115,13 @@ class DrCov(coverage.CoverageFormatBase):
     out += b'Columns: id, base, end, entry, checksum, timestamp, path\n'
     for module in self.modules.values():
       out += bytes(module)
-    out += f'BB Table: {len(self.blocks)} bbs\n'.encode()
-    for block in self.blocks:
-      out += bytes(block)
+    count = 0
+    blocks_out = b''
+    for block in self._blocks.values():
+      count += block.count
+      blocks_out += bytes(block)
+    out += f'BB Table: {count} bbs\n'.encode()
+    out += blocks_out
 
     return out
 
@@ -115,14 +134,19 @@ class DrCov(coverage.CoverageFormatBase):
     out += 'Columns: id, base, end, entry, checksum, timestamp, path\n'
     for module in self.modules:
       out += str(module)
-    out += f'BB Table: {len(self.blocks)} bbs\n'
-    for block in self.blocks:
-      out += str(block)
 
+    count = 0
+    blocks_out = b''
+    for block in self._blocks.values():
+      count += block.count
+      blocks_out += str(block)
+
+    out += f'BB Table: {count} bbs\n'
+    out += blocks_out
     return out
 
   def clear(self):
-    self.blocks.clear()
+    self._blocks = dict()
 
   def load(self, data):
     lines = data.split(b'\n')
@@ -204,16 +228,23 @@ class DrCov(coverage.CoverageFormatBase):
       start, size, mid = struct.unpack(BlockEntry.FORMAT,
                                        bb_data[offset:offset + bb_size])
       offset += bb_size
-      self.blocks.append(BlockEntry(start, size, mid))
+      try:
+        bl = self._blocks[(start, size)]
+        bl.count += 1
+      except KeyError:
+        self._blocks[(start, size)] = BlockEntry(start, size, mid)
 
   def export(self, rep: coverage.CoverageRepresentationBase):
     rep.runs += 1
 
-    for block in self.blocks:
+    for block in self._blocks.values():
       mid = block.module_id
       base = 0
       if mid in self.modules:
         base = self.modules[mid].start
+        if self.modules[mid].load_offset:
+          base += self.modules[mid].load_offset
 
       addr = block.start + base
-      rep.update_block_coverage(addr, block.size)
+      for _ in range(block.count):
+        rep.update_block_coverage(addr, block.size)

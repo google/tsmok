@@ -160,31 +160,45 @@ class DwarfRepresentation(coverage.CoverageRepresentationBase):
     return None
 
   def _get_func_info_by_addr_from_cu(self, cu, addr):
+
+    saved_info = None
     for die in cu.iter_DIEs():
-      if die.tag in ['DW_TAG_subprogram', 'DW_TAG_inlined_subroutine']:
+      if die.tag in ['DW_TAG_subprogram', 'DW_TAG_inlined_subroutine',
+                     'DW_TAG_label']:
         try:
           lowpc = die.attributes['DW_AT_low_pc'].value
+        except KeyError:
+          continue
+
+        try:
           # DWARF v4 in section 2.17 describes how to interpret the
           # DW_AT_high_pc attribute based on the class of its form.
           # For class 'address' it's taken as an absolute address
           # (similarly to DW_AT_low_pc); for class 'constant', it's
           # an offset from DW_AT_low_pc.
           highpc_attr = die.attributes['DW_AT_high_pc']
+
+          saved_info = None
+          highpc_attr_cls = elfdescriptions.describe_form_class(
+              highpc_attr.form)
+          if highpc_attr_cls == 'address':
+            highpc = highpc_attr.value
+          elif highpc_attr_cls == 'constant':
+            highpc = lowpc + highpc_attr.value
+          else:
+            self.log.error('invalid DW_AT_high_pc class: %s',
+                           highpc_attr_cls)
+            continue
+
+          if not lowpc <= addr < highpc:
+            continue
         except KeyError:
-          continue
-
-        highpc_attr_cls = elfdescriptions.describe_form_class(highpc_attr.form)
-        if highpc_attr_cls == 'address':
-          highpc = highpc_attr.value
-        elif highpc_attr_cls == 'constant':
-          highpc = lowpc + highpc_attr.value
-        else:
-          self.log.error('invalid DW_AT_high_pc class: %s',
-                         highpc_attr_cls)
-          continue
-
-        if not lowpc <= addr < highpc:
-          continue
+          if lowpc > addr:
+            if saved_info:
+              return saved_info
+            else:
+              continue
+          highpc = None
 
         if 'DW_AT_name' in die.attributes:
           name = die.attributes['DW_AT_name'].value.decode()
@@ -193,7 +207,11 @@ class DwarfRepresentation(coverage.CoverageRepresentationBase):
           except KeyError:
             raise error.Error(f'DWARF DIE for {name} does not '
                               'have DW_AT_decl_line')
-          return name, lineno
+          if highpc:  # ready to return findings
+            return name, lineno
+          else:  # only half check was done. save findings for now.
+            saved_info = (name, lineno)
+            continue
 
         if 'DW_AT_abstract_origin' not in die.attributes:
           raise error.Error(f'Wrong DWARF DIE object: {die}')
@@ -206,10 +224,16 @@ class DwarfRepresentation(coverage.CoverageRepresentationBase):
           except KeyError:
             raise error.Error(f'Orig DIE for {name} does not '
                               'have DW_AT_decl_line')
-          return name, lineno
+          if highpc:  # ready to return findings
+            return name, lineno
+          else:  # only half check was done. save findings for now.
+            saved_info = (name, lineno)
+            continue
         except:
           raise error.Error('Origin DIE object does not contain name')
 
+    if saved_info:
+      return saved_info
     return None, None
 
   def _get_cu_name(self, cu):
@@ -259,7 +283,6 @@ class DwarfRepresentation(coverage.CoverageRepresentationBase):
       src.name = name
       src.path = path
       src.funcs = dict()
-
       for entry in lineprog.get_entries():
         # We're interested in those entries where a new state is assigned
         if entry.state is None:
@@ -273,14 +296,25 @@ class DwarfRepresentation(coverage.CoverageRepresentationBase):
           self.log.debug('Unknown function for 0x%08x address', addr)
           continue
 
+        if not entry.state.line:
+          self.log.warning('Source %s, func %s, addr 0x%x: Line number is 0 '
+                           'which means that line number is unknown. Skip it.',
+                           src.name, name, addr)
+          continue
+
         try:
           func = src.funcs[name]
+          self.log.debug('Source name %s: func %s: add the line %d (addr 0x%x)',
+                         src.name, name, entry.state.line, addr)
           line = func.add_line(entry.state.line, addr)
         except KeyError:
           self.log.debug('coverage.Function %s for address 0x%08x is not '
                          'present. Create it.', name, addr)
           func = DwarfFunction(name)
           func.lineno = lineno
+          self.log.debug('Source name %s: add func %s (%d) and add line %d '
+                         '(addr 0x%x)', src.name, name, lineno,
+                         entry.state.line, addr)
           line = func.add_line(entry.state.line, addr)
           src.funcs[name] = func
         entry = AddrEntry(addr, line, func)
