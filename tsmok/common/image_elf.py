@@ -15,7 +15,6 @@ class ElfImage(image_base.Image):
   """ELF Binary Image."""
 
   def __init__(self, image: io.BufferedReader, load_addr: int):
-    self._base_addr_mod = 0
     image_base.Image.__init__(self, image, load_addr)
 
   def _symbols(self):
@@ -65,7 +64,7 @@ class ElfImage(image_base.Image):
         if seg['p_type'] == 'PT_LOAD':
           if not min_addr or seg['p_paddr'] < min_addr:
             min_addr = seg['p_paddr']
-      self._base_addr_mod = min_addr - load_addr
+      self.load_offset = min_addr - load_addr
 
     for i, seg in enumerate(self._elf.iter_segments()):
       if seg['p_type'] == 'PT_LOAD':
@@ -84,7 +83,7 @@ class ElfImage(image_base.Image):
         perm = self._convert_flags_to_perm(seg['p_flags'])
         self.mem_regions.append(
             memory.MemoryRegionData(f'load_segment {i}',
-                                    paddr - self._base_addr_mod, data, perm))
+                                    paddr - self.load_offset, data, perm))
 
   def _convert_vaddr_to_paddr(self, addr: int)-> int:
     sec = None
@@ -103,7 +102,7 @@ class ElfImage(image_base.Image):
         vaddr = seg['p_vaddr']
         paddr = seg['p_paddr']
         off = addr - vaddr
-        return paddr + off - self._base_addr_mod
+        return paddr + off - self.load_offset
 
     raise error.Error('Section {section_name} is not belong to any segment')
 
