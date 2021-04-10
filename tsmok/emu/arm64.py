@@ -334,6 +334,10 @@ class Arm64Emu(emu.Emu):
 
     return addr
 
+  def is_pstate_a64_mode(self):
+    pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
+    return (pstate & PstateFieldMask.NRW) == 0
+
   def dump_regs(self) -> None:
     pstate = self._uc.reg_read(unicorn_arm64_const.UC_ARM64_REG_PSTATE)
     n = 1 if pstate & PstateFieldMask.N else 0
