@@ -1,4 +1,4 @@
-"""Test application for OPTEE emulator."""
+"""Test application for Trusty emulator."""
 
 import argparse
 import logging
@@ -12,7 +12,7 @@ import tsmok.common.error as error
 import tsmok.common.memory as memory
 import tsmok.coverage.collectors as cov_collectors
 import tsmok.coverage.drcov as cov_drcov
-import tsmok.emu.trusty_arm64 as trusty_arm64
+import tsmok.emu.trusty.tee_arm64 as trusty_arm64
 import tsmok.hw.devices.gic as hw_gic
 import tsmok.hw.devices.rpmb as hw_rpmb
 import tsmok.trusty.image_elf_tee as trusty_image
@@ -167,7 +167,7 @@ def main(args):
 def parse_args():
   """Parses command line arguments."""
 
-  ag = argparse.ArgumentParser(description='OPTEE Emulator')
+  ag = argparse.ArgumentParser(description='Trusty Emulator')
 
   ag.add_argument('--verbose', '-v', action='count',
                   help='Increase output verbosity')

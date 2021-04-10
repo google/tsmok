@@ -1,7 +1,6 @@
 """OPTEE TA fuzzing."""
 
 import enum
-import io
 import logging
 import os
 import signal
@@ -9,14 +8,7 @@ import struct
 
 import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
-import tsmok.coverage.collectors as cov_collectors
-import tsmok.coverage.drcov as cov_drcov
-import tsmok.emu.ta_arm as ta_arm
 import tsmok.optee.const as optee_const
-import tsmok.optee.crypto_module as crypto_module
-import tsmok.optee.image_elf_ta as image_elf_ta
-import tsmok.optee.optee
-import tsmok.optee.storage.rpmb_simple as rpmb_simple
 import tsmok.optee.types as optee_types
 
 
@@ -54,10 +46,10 @@ class TaFuzzer:
     INVOKE_COMMAND = 2,
     CLOSES_ESSION = 3
 
-  def __init__(self, img_file: io.BufferedReader,
-               log_level=logging.INFO):
+  def __init__(self, ta, log_level=logging.INFO):
     self.log = logging.getLogger('[TaFuzzer]')
     self.log.setLevel(log_level)
+    self._ta = ta
 
     self._param_actions = {
         optee_const.OpteeTaParamType.NONE: self._setup_none_param,
@@ -68,21 +60,6 @@ class TaFuzzer:
         optee_const.OpteeTaParamType.MEMREF_OUTPUT: self._setup_buffer_param,
         optee_const.OpteeTaParamType.MEMREF_INOUT: self._setup_buffer_param,
     }
-
-    self.storage = rpmb_simple.StorageRpmbSimple(log_level=self.log.level)
-    self.tee = tsmok.optee.optee.Optee(extension=None,
-                                       crypto=crypto_module.CryptoModule(),
-                                       log_level=self.log.level)
-    self.tee.storage_add(self.storage)
-
-    self.ta = ta_arm.TaArmEmu(self.tee, log_level=self.log.level)
-    img = image_elf_ta.TaElfImage(img_file)
-    self.ta.load(img)
-
-    cov = cov_drcov.DrCov(log_level=log_level)
-    cov.add_module(img.name, img.text_start, img.text_end)
-    self.coverage_collector = cov_collectors.BlockCollector(
-        cov, log_level=log_level)
 
   def _setup_int_param(self, param, data):
     sz = struct.calcsize(self.PARAM_INT_FMT)
@@ -106,15 +83,6 @@ class TaFuzzer:
     del param, data  # unused in this function
     return 0
 
-  def coverage_enable(self):
-    self.ta.coverage_register(self.coverage_collector)
-
-  def coverage_disable(self):
-    self.ta.coverage_del(self.coverage_collector.name)
-
-  def coverage_dump(self):
-    return self.coverage_collector.cov.dump()
-
   def init(self, mode):
     """Starts AFL forkserver.
 
@@ -137,9 +105,9 @@ class TaFuzzer:
     self.mode = mode
     # optee session before starting forkserver for performance
     if mode == self.Mode.INVOKE_COMMAND:
-      self.ta.open_session(self.SESSION_ID, [])
+      self._ta.open_session(self.SESSION_ID, [])
 
-    return self.ta.forkserver_start()
+    return self._ta.forkserver_start()
 
   def run(self, data: bytes):
     """Runs Ta emulation.
@@ -176,8 +144,8 @@ class TaFuzzer:
 
     ret = optee_const.OpteeErrorCode.SUCCESS
     try:
-      ret, _ = self.ta.invoke_command(self.SESSION_ID, cmd, param_list)
-      self.ta.close_session(self.SESSION_ID)
+      ret, _ = self._ta.invoke_command(self.SESSION_ID, cmd, param_list)
+      self._ta.close_session(self.SESSION_ID)
     except ta_error.TaPanicError as e:
       logging.error(e.message)
       ret = e.ret
@@ -188,4 +156,4 @@ class TaFuzzer:
     return ret
 
   def stop(self):
-    self.ta.exit(0)
+    self._ta.exit(0)
