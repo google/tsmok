@@ -413,8 +413,8 @@ class Emu(abc.ABC):
     """
 
     del uc, value, udata  # unused by the hook
-    ranges = self._mem_unmapped_handlers[portion.closedopen([paddr,
-                                                             paddr + size])]
+    ranges = self._mem_unmapped_handlers[portion.closedopen(paddr,
+                                                            paddr + size)]
     if not ranges:
       self.exit_with_exception(
           error.Error('[MEM] Unmapped at {} to {}, size = 0x{:x}'.format(
