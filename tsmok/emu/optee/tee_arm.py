@@ -9,6 +9,7 @@ import uuid
 
 import tsmok.atf.atf
 import tsmok.common.error as error
+import tsmok.common.memory as memory
 import tsmok.common.region_allocator as region_allocator
 import tsmok.common.smc as smc
 import tsmok.emu.arm as arm
@@ -102,34 +103,11 @@ class OpteeArmEmu(arm.ArmEmu):
     self._rpc_cmd_handlers[optee_const.OpteeMsgRpcCmdType.BENCH_REG] = \
         self._rpc_cmd_bench_reg
 
-    self.shared_memory_setup()
+    self._memory_setup()
 
-    # TODO(dmityya): Fix the unicorn engine
-    self.add_mem_write_handler(self._workaround_vma_writer,
-                               0x00100000, 0x00100000 + 0x1000000 - 1)
-
-    self.add_mem_invalid_callback(self._exit_address_callback,
-                                  self.EXIT_RETURN_ADDR,
-                                  self.EXIT_RETURN_ADDR + 2)
-
-  def _exit_address_callback(self, cls, access: int, addr: int, size: int):
-    if addr == self.EXIT_RETURN_ADDR:
-      regs = self.get_regs()
-      self.exit(regs.reg0)
-      return True
-
-    return False
-
-  def _workaround_vma_writer(self, em, addr, size, value):
-    del em  # unused
-    if size == 1:
-      self.mem_write(addr, struct.pack('<B', value))
-    elif size == 2:
-      self.mem_write(addr, struct.pack('<H', value))
-    elif size == 4:
-      self.mem_write(addr, struct.pack('<I', value))
-    elif size == 8:
-      self.mem_write(addr, struct.pack('<Q', value))
+    # self.EXIT_RETURN_ADDR is catched in _prefetch_abort_handler handler
+    self.load_to_mem('EXIT_RETURN_ADDR', self.EXIT_RETURN_ADDR,
+                     b'\x00'*4, memory.MemAccessPermissions.RX)
 
   def _smc_handler(self, regs) -> None:
     call = regs.reg0
@@ -169,8 +147,11 @@ class OpteeArmEmu(arm.ArmEmu):
     self.set_return_address(pc)
 
   def _prefetch_abort_handler(self, regs) -> None:
-    self.exit_with_exception(error.Error('Prefetch Abort'))
-    self.dump_regs()
+    if self.get_current_address() == self.EXIT_RETURN_ADDR:
+      self.exit(regs.reg0)
+    else:
+      self.exit_with_exception(error.Error('Prefetch Abort'))
+      self.dump_regs()
 
   def _get_args(self, regs) -> List[int]:
     args = []
@@ -420,7 +401,7 @@ class OpteeArmEmu(arm.ArmEmu):
         self.dump_regs()
         raise error.Error('Unsupported RPC request: 0x{self._ret0:08x}')
 
-  def shared_memory_setup(self):
+  def _memory_setup(self):
     if not self._atf:
       self._log.debug('No ATF shared memory configuration')
       return
