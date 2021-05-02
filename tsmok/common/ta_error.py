@@ -1,6 +1,6 @@
 """Defines TA specific exceptions."""
 
-import tsmok.optee.const as optee_const
+import tsmok.optee.error as optee_error
 
 
 class TaPanicError(Exception):
@@ -8,7 +8,7 @@ class TaPanicError(Exception):
   def __init__(self, code, message):
     Exception.__init__(self, message)
     self.code = code
-    self.ret = optee_const.OpteeErrorCode.ERROR_TARGET_DEAD
+    self.ret = optee_error.OpteeErrorCode.ERROR_TARGET_DEAD
     self.message = message
 
 

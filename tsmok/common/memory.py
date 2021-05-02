@@ -23,8 +23,8 @@ class MemoryRegion:
     self.perm = perm
 
   def __str__(self):
-    return (f'Name: {self.name}; Start: 0x{self.start:08x}; '
-            f'Size: 0x{self.size:08x}; Permissions: {str(self.perm)}')
+    return (f'Name: {self.name}; Start: 0x{self.start:x}; '
+            f'Size: 0x{self.size:x}; Permissions: {str(self.perm)}')
 
 
 class MemoryRegionData(MemoryRegion):
@@ -35,3 +35,16 @@ class MemoryRegionData(MemoryRegion):
       size = len(data)
     MemoryRegion.__init__(self, name, start, size, perm)
     self.data = data
+
+
+class MemoryRegionVirtual(MemoryRegion):
+
+  def __init__(self, name: str, start: int, vaddr: int, size: int,
+               perm: MemAccessPermissions):
+    MemoryRegion.__init__(self, name, start, size, perm)
+    self.vaddr = vaddr
+
+  def __str__(self):
+    return (f'Name: {self.name}; Start: 0x{self.start:x}; '
+            f'Address: 0x{self.vaddr:x}; Size: 0x{self.size:x}; '
+            f'Permissions: {str(self.perm)}')

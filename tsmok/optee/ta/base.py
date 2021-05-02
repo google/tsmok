@@ -2,8 +2,8 @@
 
 import abc
 from typing import List
-import tsmok.optee.const as optee_const
-import tsmok.optee.types as optee_types
+import tsmok.optee.error as optee_error
+import tsmok.optee.ta_param as ta_param
 
 
 class Ta(abc.ABC):
@@ -22,17 +22,17 @@ class Ta(abc.ABC):
   @abc.abstractmethod
   def open_session(
       self, sid: int,
-      params: List[optee_types.OpteeTaParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
+      params: List[ta_param.OpteeTaParam]
+      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
     raise NotImplementedError()
 
   @abc.abstractmethod
   def invoke_command(
       self, sid: int, cmd: int,
-      params: List[optee_types.OpteeTaParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
+      params: List[ta_param.OpteeTaParam]
+      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
     raise NotImplementedError()
 
   @abc.abstractmethod
-  def close_session(self, sid: int) -> (optee_const.OpteeErrorCode):
+  def close_session(self, sid: int) -> (optee_error.OpteeErrorCode):
     raise NotImplementedError()

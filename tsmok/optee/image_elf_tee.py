@@ -12,7 +12,8 @@ class TeeElfImage(image_elf.ElfImage):
 
   THREAD_INIT_FUNC = 'thread_init_boot_thread'
   THREAD_CLEAR_FUNC = 'thread_clr_boot_thread'
-  PUSH_SESSION_FUNC = 'tee_ta_push_current_session'
+  PUSH_SESSION_FUNC = 'ts_push_current_session'
+  POP_SESSION_FUNC = 'ts_pop_current_session'
   START_FUNC = '_start'
 
   def __init__(self, image: io.BufferedReader, load_addr: int = None):
@@ -20,6 +21,7 @@ class TeeElfImage(image_elf.ElfImage):
     self.thread_init = None
     self.thread_clear = None
     self.push_session = None
+    self.pop_session = None
     self._get_func_addresses()
 
   def _get_func_addresses(self):
@@ -32,9 +34,11 @@ class TeeElfImage(image_elf.ElfImage):
         self.entry_point = self._convert_vaddr_to_paddr(addr)
       elif name == self.PUSH_SESSION_FUNC:
         self.push_session = self._convert_vaddr_to_paddr(addr)
+      elif name == self.POP_SESSION_FUNC:
+        self.pop_session = self._convert_vaddr_to_paddr(addr)
 
-      if (self.thread_init and self.thread_clear and self.entry_point
-          and self.push_session):
+      if all([self.thread_init, self.thread_clear, self.entry_point,
+              self.push_session, self.pop_session]):
         break
 
     if not self.entry_point:

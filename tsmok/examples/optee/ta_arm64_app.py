@@ -10,10 +10,10 @@ import tsmok.common.error as error
 import tsmok.coverage.collectors as cov_collectors
 import tsmok.coverage.drcov as cov_drcov
 import tsmok.emu.optee.ta_arm64 as ta_arm64
-import tsmok.optee.crypto_module as crypto_module
+import tsmok.optee.crypto as crypto_module
 import tsmok.optee.image_elf_ta as image_elf_ta
 import tsmok.optee.optee as optee
-import tsmok.optee.storage.rpmb_simple as rpmb_simple
+import tsmok.optee.rpmb_simple as rpmb_simple
 import tsmok.optee.ta.hello_world as ta_hello_world
 
 
@@ -55,7 +55,8 @@ def main(args):
   try:
     storage = rpmb_simple.StorageRpmbSimple(log_level=log_level)
 
-    tee = optee.Optee(crypto=crypto_module.CryptoModule(), log_level=log_level)
+    tee = optee.Optee(crypto_module=crypto_module.CryptoModule(),
+                      log_level=log_level)
     tee.storage_add(storage)
 
     img = image_elf_ta.TaElfImage(args.ta)

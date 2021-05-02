@@ -7,16 +7,20 @@ import uuid
 
 import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
-import tsmok.optee.const as optee_const
-import tsmok.optee.crypto_module as crypto_module
+import tsmok.optee.crypto as crypto
+import tsmok.optee.error as optee_error
+import tsmok.optee.property as optee_property
+import tsmok.optee.storage as optee_storage
+import tsmok.optee.syscalls as syscalls
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.types as optee_types
+import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_attr as utee_attr
 
 
 class Optee:
   """Implementation of OPTEE TEE OS."""
 
-  def __init__(self, crypto: crypto_module.CryptoModule,
+  def __init__(self, crypto_module: crypto.CryptoModule,
                log_level=logging.ERROR):
     self.log = logging.getLogger('[OPTEE]')
     self.log.setLevel(log_level)
@@ -31,7 +35,7 @@ class Optee:
 
     self.enumerators = dict()
 
-    self.crypto_module = crypto
+    self.crypto_module = crypto_module
 
     self.prop_sets = dict()
 
@@ -40,93 +44,93 @@ class Optee:
   def _setup(self):
     """Setup system call handlers."""
 
-    self.syscall_callbacks[optee_const.OpteeSysCalls.LOG] = self.syscall_log
-    self.syscall_callbacks[optee_const.OpteeSysCalls.PANIC] = self.syscall_panic
-    self.syscall_callbacks[optee_const.OpteeSysCalls.RETURN] = \
+    self.syscall_callbacks[syscalls.OpteeSysCalls.LOG] = self.syscall_log
+    self.syscall_callbacks[syscalls.OpteeSysCalls.PANIC] = self.syscall_panic
+    self.syscall_callbacks[syscalls.OpteeSysCalls.RETURN] = \
         self.syscall_return
-    self.syscall_callbacks[optee_const.OpteeSysCalls.GET_PROPERTY_NAME_TO_INDEX] = \
+    self.syscall_callbacks[syscalls.OpteeSysCalls.GET_PROPERTY_NAME_TO_INDEX] = \
         self.syscall_get_property_name_to_index
-    self.syscall_callbacks[optee_const.OpteeSysCalls.GET_PROPERTY] = \
+    self.syscall_callbacks[syscalls.OpteeSysCalls.GET_PROPERTY] = \
         self.syscall_get_property
 
     # TA syscall
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .OPEN_TA_SESSION] = self.syscall_open_ta_session
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .INVOKE_TA_COMMAND] = self.syscall_invoke_ta_command
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CLOSE_TA_SESSION] = self.syscall_close_ta_session
 
     # Storage object syscall
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_OPEN] = self.syscall_storage_obj_open
-    self.syscall_callbacks[optee_const.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCalls.
                            STORAGE_OBJ_CREATE] = self.syscall_storage_obj_create
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_READ] = self.syscall_storage_obj_read
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_DEL] = self.syscall_storage_obj_del
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_SEEK] = self.syscall_storage_obj_seek
-    self.syscall_callbacks[optee_const.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCalls.
                            STORAGE_OBJ_RENAME] = self.syscall_storage_obj_rename
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_TRUNC] = self.syscall_storage_obj_trunc
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_OBJ_WRITE] = self.syscall_storage_obj_write
 
     # Storage enumerator syscall
-    self.syscall_callbacks[optee_const.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCalls.
                            STORAGE_ENUM_ALLOC] = self.syscall_storage_alloc_enum
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_ENUM_FREE] = self.syscall_storage_free_enum
-    self.syscall_callbacks[optee_const.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCalls.
                            STORAGE_ENUM_RESET] = self.syscall_storage_reset_enum
-    self.syscall_callbacks[optee_const.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCalls.
                            STORAGE_ENUM_START] = self.syscall_storage_start_enum
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .STORAGE_ENUM_NEXT] = self.syscall_storage_next_enum
 
     # Crypt
     self.syscall_callbacks[
-        optee_const.OpteeSysCalls.CRYP_OBJ_CLOSE] = self.syscall_cryp_obj_close
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+        syscalls.OpteeSysCalls.CRYP_OBJ_CLOSE] = self.syscall_cryp_obj_close
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_GET_INFO] = self.syscall_cryp_obj_get_info
     self.syscall_callbacks[
-        optee_const.OpteeSysCalls
+        syscalls.OpteeSysCalls
         .CRYP_RANDOM_NUMBER_GENERATE] = self.syscall_cryp_random_number_generate
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_STATE_ALLOC] = self.syscall_cryp_state_alloc
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_STATE_FREE] = self.syscall_cryp_state_free
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_ALLOC] = self.syscall_cryp_obj_alloc
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_POPULATE] = self.syscall_cryp_obj_populate
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_RESET] = self.syscall_cryp_obj_reset
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_COPY] = self.syscall_cryp_obj_copy
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_OBJ_GET_ATTR] = self.syscall_cryp_obj_get_attr
 
-    self.syscall_callbacks[optee_const.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCalls
                            .CRYP_DERIVE_KEY] = self.syscall_cryp_derive_key
 
     self.syscall_callbacks[
-        optee_const.OpteeSysCalls.HASH_INIT] = self.syscall_hash_init
+        syscalls.OpteeSysCalls.HASH_INIT] = self.syscall_hash_init
     self.syscall_callbacks[
-        optee_const.OpteeSysCalls.HASH_UPDATE] = self.syscall_hash_update
+        syscalls.OpteeSysCalls.HASH_UPDATE] = self.syscall_hash_update
     self.syscall_callbacks[
-        optee_const.OpteeSysCalls.HASH_FINAL] = self.syscall_hash_final
+        syscalls.OpteeSysCalls.HASH_FINAL] = self.syscall_hash_final
 
-  def property_add(self, prop_type: optee_const.OpteePropsetType,
-                   prop: optee_types.OpteeProperty):
+  def property_add(self, prop_type: optee_property.OpteePropsetType,
+                   prop: optee_property.OpteeProperty):
     """Set new property.
 
     Args:
       prop_type: the type of property set, defined by
-                 optee_const.OpteePropsetType
+                 optee_property.OpteePropsetType
       prop: A new property to be set into
     """
     if prop_type not in self.prop_sets:
@@ -139,12 +143,13 @@ class Optee:
 
     prop_set.append(prop)
 
-  def property_del(self, prop_type: optee_const.OpteePropsetType, name: bytes):
+  def property_del(self, prop_type: optee_property.OpteePropsetType,
+                   name: bytes):
     """Set new property.
 
     Args:
       prop_type: the type of property set, defined by
-                 optee_const.OpteePropsetType
+                 optee_property.OpteePropsetType
       name: The name of property to be removed.
     """
     if prop_type not in self.prop_sets:
@@ -191,31 +196,31 @@ class Optee:
       self.log.debug('\targs[%d]: 0x%08x', i, args[i])
 
   def optee_params_load_from_memory(self, ta: ta_base.Ta, addr: int
-                                   ) -> List[optee_types.OpteeTaParam]:
-    buf = ta.mem_read(addr, optee_const.OPTEE_PARAMS_DATA_SIZE)
-    params = optee_types.optee_params_from_data(buf)
+                                   ) -> List[ta_param.OpteeTaParam]:
+    buf = ta.mem_read(addr, ta_param.OPTEE_PARAMS_DATA_SIZE)
+    params = ta_param.optee_params_from_data(buf)
     for p in params:
-      if isinstance(p, optee_types.OpteeTaParamMemref):
+      if isinstance(p, ta_param.OpteeTaParamMemref):
         if p.addr != 0 and p.size != 0:
           p.data = ta.mem_read(p.addr, p.size)
 
     return params
 
   def optee_params_load_to_memory(self, ta: ta_base.Ta, addr: int,
-                                  params: List[optee_types.OpteeTaParam]
+                                  params: List[ta_param.OpteeTaParam]
                                  ) -> None:
-    """Loads optee_types.OpteeTaParam list into TA memory.
+    """Loads ta_param.OpteeTaParam list into TA memory.
 
     Args:
       ta: TA emulator instance
       addr: Address in the TA memory space where parameters will be loaded
-      params: the list of optee_types.OpteeTaParam paramenters
+      params: the list of ta_param.OpteeTaParam paramenters
 
     Returns: None
     """
-    buf = optee_types.optee_params_to_data(params)
+    buf = ta_param.optee_params_to_data(params)
     for p in params:
-      if isinstance(p, optee_types.OpteeTaParamMemref):
+      if isinstance(p, ta_param.OpteeTaParamMemref):
         if p.data:
           if p.addr == 0 or len(p.data) > p.size:
             raise error.Error(f'wrong format or data size: {str(p)}')
@@ -235,19 +240,19 @@ class Optee:
   # SYSTEM CALLS callbacks
   # ===============================================================
   # void syscall_log(const void *buf __maybe_unused, size_t len __maybe_unused)
-  def syscall_log(self, ta, args: List[int]) -> optee_const.OpteeErrorCode:
+  def syscall_log(self, ta, args: List[int]) -> optee_error.OpteeErrorCode:
     buf = args[0]
     l = args[1]
 
     data = ta.mem_read(buf, l)
     self.log.info('[LOG]:> \n\t\t %s', data.decode('utf-8'))
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
-  def syscall_panic(self, ta, args) -> optee_const.OpteeErrorCode:
+  def syscall_panic(self, ta, args) -> optee_error.OpteeErrorCode:
     raise ta_base.TaPanicError(args[0], f'TA {ta.uuid} PANIC')
 
-  def syscall_return(self, ta, args) -> optee_const.OpteeErrorCode:
-    ret = optee_const.OpteeErrorCode(args[0])
+  def syscall_return(self, ta, args) -> optee_error.OpteeErrorCode:
+    ret = optee_error.OpteeErrorCode(args[0])
     raise ta_error.TaExit(ret, f'TA Exit: ret code: {str(ret)}')
 
   # TEE_Result syscall_open_ta_session(const TEE_UUID *dest,
@@ -255,7 +260,7 @@ class Optee:
   #                           struct utee_params *usr_param,
   #                           uint32_t *ta_sess,
   #                           uint32_t *ret_orig)
-  def syscall_open_ta_session(self, ta, args) -> optee_const.OpteeErrorCode:
+  def syscall_open_ta_session(self, ta, args) -> optee_error.OpteeErrorCode:
     """Syscall to open TA session.
 
     Args:
@@ -268,13 +273,13 @@ class Optee:
            [4]: pointer to store return code
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.log.info('[External TA] TEE_OpenTASession')
     self.args_dump(args)
 
     if len(args) < 5:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     data = ta.mem_read(args[0], 16)
     arg0, arg1, arg2 = struct.unpack('I2H', data[:8])
@@ -289,13 +294,13 @@ class Optee:
       sid = self.gen_sid()
       params = self.optee_params_load_from_memory(ta, args[2])
       ret, params = target_ta.open_session(sid, params)
-      if ret == optee_const.OpteeErrorCode.SUCCESS:
+      if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.open_sessions[sid] = target_ta
         self.optee_params_load_to_memory(ta, args[2], params)
         ta.mem_write(args[3], struct.pack('I', sid))
       return ret
 
-    return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+    return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
   # TEE_Result syscall_close_ta_session(unsigned long ta_sess)
   def syscall_close_ta_session(self, ta: ta_base.Ta, args: List[int]) -> bool:
@@ -307,14 +312,14 @@ class Optee:
            [0]: session id to close
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused in this call
     self.log.info('[External TA] TEE_CloseTASession')
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.open_sessions:
       target_ta = self.open_sessions[args[0]]
@@ -322,7 +327,7 @@ class Optee:
       del self.open_sessions[args[0]]
       return target_ta.close_session(args[0])
 
-    return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+    return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
   # TEE_Result syscall_invoke_ta_command(unsigned long ta_sess,
   #                       unsigned long cancel_req_to, unsigned long cmd_id,
@@ -340,13 +345,13 @@ class Optee:
            [4]: pointer to store return code
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.log.info('[External TA] TEE_InvokeTACommand')
     self.args_dump(args)
 
     if len(args) < 5:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.open_sessions:
       target_ta = self.open_sessions[args[0]]
@@ -356,7 +361,7 @@ class Optee:
       self.optee_params_load_to_memory(ta, args[3], params)
       return ret
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_open(unsigned long storage_id,
   #                 void *object_id, size_t object_id_len,
@@ -374,12 +379,12 @@ class Optee:
            [4]: pointer to store object handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 5:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     object_id = ta.mem_read(args[1], args[2])
     self.log.info('Open object: %s', object_id)
@@ -389,14 +394,14 @@ class Optee:
       self.log.info('Found storage: %s', storage.name)
 
       objh = self.gen_obj_handler()
-      flags = optee_const.OpteeStorageFlags(args[3])
+      flags = optee_storage.OpteeStorageFlags(args[3])
       ret = storage.object_open(objh, object_id, flags)
-      if ret == optee_const.OpteeErrorCode.SUCCESS:
+      if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.object_handlers[objh] = storage
         ta.mem_write(args[4], struct.pack('I', objh))
       return ret
 
-    return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+    return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
   # TEE_Result syscall_storage_obj_create(unsigned long storage_id,
   #                 void *object_id, size_t object_id_len,
@@ -418,12 +423,12 @@ class Optee:
            [7]: pointer to store object handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 8:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     object_id = ta.mem_read(args[1], args[2])
     data = ta.mem_read(args[5], args[6])
@@ -435,14 +440,14 @@ class Optee:
       self.log.info('[STORAGE] Found: %s', storage.name)
 
       objh = self.gen_obj_handler()
-      flags = optee_const.OpteeStorageFlags(args[3])
+      flags = optee_storage.OpteeStorageFlags(args[3])
       ret = storage.object_create(objh, object_id, flags, args[4], data)
-      if ret == optee_const.OpteeErrorCode.SUCCESS:
+      if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.object_handlers[objh] = storage
         ta.mem_write(args[7], struct.pack('I', objh))
       return ret
 
-    return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+    return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
   # TEE_Result syscall_storage_obj_read(unsigned long obj, void *data,
   #               size_t len, uint64_t *count)
@@ -458,26 +463,26 @@ class Optee:
            [3]: pointer to store read count
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 4:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       ret, data = storage.object_read(args[0], args[2])
-      if ret == optee_const.OpteeErrorCode.SUCCESS:
+      if ret == optee_error.OpteeErrorCode.SUCCESS:
         ta.mem_write(args[1], data)
         ta.u32_write(args[3], len(data))
       return ret
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_del(unsigned long obj)
   def syscall_storage_obj_del(self, ta: ta_base.Ta,
-                              args: List[int]) -> optee_const.OpteeErrorCode:
+                              args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to delete the object.
 
     Args:
@@ -486,25 +491,25 @@ class Optee:
            [0]: object handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       del self.object_handlers[args[0]]
       return storage.object_delete(args[0])
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_rename(unsigned long obj, void *object_id,
   #                   size_t object_id_len)
   def syscall_storage_obj_rename(self, ta: ta_base.Ta,
-                                 args: List[int]) -> optee_const.OpteeErrorCode:
+                                 args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to rename the object.
 
     Args:
@@ -515,23 +520,23 @@ class Optee:
            [2]: size of the buffer with mew object id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     object_id = ta.mem_read(args[1], args[2])
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       return storage.object_rename(args[0], object_id)
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_trunc(unsigned long obj, size_t len)
   def syscall_storage_obj_trunc(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall for truncate the object in a storage.
 
     Args:
@@ -541,24 +546,24 @@ class Optee:
            [1]: new size
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 2:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       return storage.object_trunc(args[0], args[1])
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_write(unsigned long obj,
   #                     void *data, size_t len)
   def syscall_storage_obj_write(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall for writing data to the object.
 
     Args:
@@ -569,24 +574,24 @@ class Optee:
            [2]: size of the buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       data = ta.mem_read(args[1], args[2])
       return storage.object_write(args[0], data)
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_obj_seek(unsigned long obj, int32_t offset,
   #                   unsigned long whence)
   def syscall_storage_obj_seek(self, ta: ta_base.Ta,
-                               args: List[int]) -> optee_const.OpteeErrorCode:
+                               args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall for set position in the object data.
 
     Args:
@@ -597,23 +602,23 @@ class Optee:
            [2]: whence
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] in self.object_handlers:
       storage = self.object_handlers[args[0]]
       return storage.object_seek(args[0], args[1], args[2])
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_storage_alloc_enum(uint32_t *obj_enum)
   def syscall_storage_alloc_enum(self, ta: ta_base.Ta,
-                                 args: List[int]) -> optee_const.OpteeErrorCode:
+                                 args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to allocat an object enumerator.
 
     Args:
@@ -622,15 +627,15 @@ class Optee:
            [0]: pointer to store object enumerator handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     enum = self.gen_enum_id()
 
@@ -638,11 +643,11 @@ class Optee:
 
     ta.u32_write(args[0], enum)
 
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_storage_free_enum(unsigned long obj_enum)
   def syscall_storage_free_enum(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to deallocat the object enumerator.
 
     Args:
@@ -651,20 +656,20 @@ class Optee:
            [0]: object enumerator handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     eid = args[0]
 
     if eid not in self.enumerators:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
-    ret = optee_const.OpteeErrorCode.SUCCESS
+    ret = optee_error.OpteeErrorCode.SUCCESS
     if self.enumerators[eid]:
       ret = self.enumerators[eid].enum_free(eid)
 
@@ -673,7 +678,7 @@ class Optee:
 
   # TEE_Result syscall_storage_reset_enum(unsigned long obj_enum)
   def syscall_storage_reset_enum(self, ta: ta_base.Ta,
-                                 args: List[int]) -> optee_const.OpteeErrorCode:
+                                 args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to reset the object enumerator.
 
     Args:
@@ -682,20 +687,20 @@ class Optee:
            [0]: object enumerator handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     eid = args[0]
 
     if eid not in self.enumerators:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
-    ret = optee_const.OpteeErrorCode.SUCCESS
+    ret = optee_error.OpteeErrorCode.SUCCESS
     if self.enumerators[eid]:
       ret = self.enumerators[eid].enum_reset(eid)
 
@@ -704,7 +709,7 @@ class Optee:
   # TEE_Result syscall_storage_start_enum(unsigned long obj_enum,
   #                       unsigned long storage_id)
   def syscall_storage_start_enum(self, ta: ta_base.Ta,
-                                 args: List[int]) -> optee_const.OpteeErrorCode:
+                                 args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to start objects enumeration.
 
     Args:
@@ -714,21 +719,21 @@ class Optee:
            [1]: storage id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 2:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     eid = args[0]
 
     if eid not in self.enumerators:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[1] not in self.storage_list:
-      return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+      return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
     self.enumerators[eid] = self.storage_list[args[1]]
 
@@ -737,7 +742,7 @@ class Optee:
   # TEE_Result syscall_storage_next_enum(unsigned long obj_enum,
   #                      TEE_ObjectInfo *info, void *obj_id, uint64_t *len)
   def syscall_storage_next_enum(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to get a next element from object enumerator.
 
     Args:
@@ -750,28 +755,28 @@ class Optee:
            [3]" size of the buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 4:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     eid = args[0]
     if args[2] == 0 or args[3] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if eid not in self.enumerators:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     ret, obj_id = self.enumerators[eid].enum_next(eid)
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       return ret
 
     ta.mem_write(args[2], obj_id)
     ta.u32_write(args[3], len(obj_id))
 
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_cryp_obj_close(unsigned long obj)
   def syscall_cryp_obj_close(self, ta: ta_base.Ta, args):
@@ -783,13 +788,13 @@ class Optee:
            [0]: object handler id
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Close object %s', args[0])
     if args[0] in self.object_handlers:
@@ -798,12 +803,12 @@ class Optee:
       del self.object_handlers[args[0]]
       return storage.object_close(args[0])
 
-    return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+    return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
   # TEE_Result syscall_cryp_obj_get_info(unsigned long obj,
   #                     TEE_ObjectInfo *info)
   def syscall_cryp_obj_get_info(self, ta: ta_base.Ta,
-                                args) -> optee_const.OpteeErrorCode:
+                                args) -> optee_error.OpteeErrorCode:
     """Syscall to get the object info.
 
     Args:
@@ -814,29 +819,29 @@ class Optee:
                 representation.
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
     if len(args) < 2:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Get object info %d', args[0])
     if args[0] not in self.object_handlers:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[1] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     storage = self.object_handlers[args[0]]
     self.log.info('Found open object handler %d in %s', args[0], storage.name)
     ret, info = storage.object_get_info(args[0])
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       return ret
 
     data = info.data()
     ta.mem_write(args[1], data)
 
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_cryp_random_number_generate(void *buf, size_t blen)
   def syscall_cryp_random_number_generate(self, ta, args):
@@ -849,28 +854,28 @@ class Optee:
            [1]: size of the buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 2:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     buf = args[0]
 
     if buf == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     data = self.crypto_module.cryp_random_number_generate(args[1])
     ta.mem_write(buf, data)
 
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_cryp_state_alloc(unsigned long algo, unsigned long mode,
   #                       unsigned long key1, unsigned long key2,
   #                       uint32_t *state)
   def syscall_cryp_state_alloc(self, ta: ta_base.Ta,
-                               args: List[int]) -> optee_const.OpteeErrorCode:
+                               args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to allocate crypto module state.
 
     Args:
@@ -883,32 +888,32 @@ class Optee:
            [4]: pointer to a crypto state handler
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 5:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     state = args[4]
 
     if state == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
-    algo = optee_const.OpteeCrypAlg(args[0])
-    mode = optee_const.OpteeCrypOperation(args[1])
+    algo = crypto.OpteeCrypAlg(args[0])
+    mode = crypto.OpteeCrypOperation(args[1])
 
     self.log.debug('Crypto State Allocation: algo = %s, mode = %s', algo, mode)
 
     ret, st = self.crypto_module.state_alloc(algo, mode, args[2], args[3])
-    if ret == optee_const.OpteeErrorCode.SUCCESS:
+    if ret == optee_error.OpteeErrorCode.SUCCESS:
       ta.u32_write(state, st)
 
     return ret
 
   # TEE_Result syscall_cryp_state_free(unsigned long state)
   def syscall_cryp_state_free(self, ta: ta_base.Ta,
-                              args: List[int]) -> optee_const.OpteeErrorCode:
+                              args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to deallocate crypto module state.
 
     Args:
@@ -917,20 +922,20 @@ class Optee:
            [0]: crypto state handler
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     return self.crypto_module.state_free(args[0])
 
   # TEE_Result syscall_cryp_obj_alloc(unsigned long obj_type,
   #           unsigned long max_key_size, uint32_t *obj)
   def syscall_cryp_obj_alloc(self, ta: ta_base.Ta,
-                             args: List[int]) -> optee_const.OpteeErrorCode:
+                             args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to allocate crypto module object.
 
     Args:
@@ -941,25 +946,25 @@ class Optee:
            [2]: pointer to a crypto object handler
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[2] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
-    otype = optee_const.OpteeObjectType(args[0])
-    if otype == optee_const.OpteeObjectType.DATA:
-      return optee_const.OpteeErrorCode.ERROR_NOT_SUPPORTED
+    otype = optee_storage.OpteeObjectType(args[0])
+    if otype == optee_storage.OpteeObjectType.DATA:
+      return optee_error.OpteeErrorCode.ERROR_NOT_SUPPORTED
 
     self.log.debug('Crypto Object Allocation: mode = %s', otype)
 
     objh = self.gen_obj_handler()
     ret = self.crypto_module.object_alloc(objh, otype, args[1])
-    if ret == optee_const.OpteeErrorCode.SUCCESS:
+    if ret == optee_error.OpteeErrorCode.SUCCESS:
       self.object_handlers[objh] = self.crypto_module
       ta.u32_write(args[2], objh)
 
@@ -969,7 +974,7 @@ class Optee:
   #           struct utee_attribute *usr_attrs,
   #           unsigned long attr_count)
   def syscall_cryp_obj_populate(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to populate crypto module object.
 
     Args:
@@ -980,32 +985,32 @@ class Optee:
            [2]: attributes count
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Get object info %d', args[0])
     if args[0] not in self.object_handlers:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[1] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[2] == 0:
-      return optee_const.OpteeErrorCode.SUCCESS
+      return optee_error.OpteeErrorCode.SUCCESS
 
-    attr_size = optee_types.OpteeUteeAttribute.size()
+    attr_size = utee_attr.OpteeUteeAttribute.size()
     total_size = attr_size * args[2]
     data = ta.mem_read(args[1], total_size)
 
     attrs = []
     off = 0
     for _ in range(args[2]):
-      attr = optee_types.OpteeUteeAttribute.create(data[off:])
-      if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
+      attr = utee_attr.OpteeUteeAttribute.create(data[off:])
+      if isinstance(attr, utee_attr.OpteeUteeAttributeMemory):
         if attr.addr and attr.size:
           attr.data = ta.mem_read(attr.addr, attr.size)
       off += attr_size
@@ -1018,7 +1023,7 @@ class Optee:
 
   # TEE_Result syscall_cryp_obj_reset(unsigned long obj)
   def syscall_cryp_obj_reset(self, ta: ta_base.Ta,
-                             args: List[int]) -> optee_const.OpteeErrorCode:
+                             args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to reset crypto module object.
 
     Args:
@@ -1027,17 +1032,17 @@ class Optee:
            [0]: handler id to the crypto object
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Get object info %d', args[0])
     if args[0] not in self.object_handlers:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     storage = self.object_handlers[args[0]]
     self.log.info('Found open object handler %d in %s', args[0], storage.name)
@@ -1046,7 +1051,7 @@ class Optee:
 
   # TEE_Result syscall_cryp_obj_copy(unsigned long dst, unsigned long src)
   def syscall_cryp_obj_copy(self, ta: ta_base.Ta,
-                            args: List[int]) -> optee_const.OpteeErrorCode:
+                            args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to copy crypto module object.
 
     Args:
@@ -1056,17 +1061,17 @@ class Optee:
            [1]: handler id to src the crypto object
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     del ta  # unused
     self.args_dump(args)
 
     if len(args) < 1:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Get object info dst: %d; src: %d', args[0], args[1])
     if args[0] not in self.object_handlers:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     storage = self.object_handlers[args[0]]
     self.log.info('Found open object handler %d in %s', args[0], storage.name)
@@ -1077,7 +1082,7 @@ class Optee:
   #           unsigned long attr_id,
   #           void *buffer, uint64_t *size)
   def syscall_cryp_obj_get_attr(self, ta: ta_base.Ta,
-                                args: List[int]) -> optee_const.OpteeErrorCode:
+                                args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to get specific attribute data from crypto module object.
 
     Args:
@@ -1089,26 +1094,26 @@ class Optee:
            [3]: buffer size addr
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 4:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[2] == 0 or args[3] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
-    attr_id = optee_const.OpteeAttr(args[1])
+    attr_id = crypto.OpteeAttr(args[1])
 
     self.log.info('Get object id: %d; attr id: %s', args[0], attr_id)
     if args[0] not in self.object_handlers:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     storage = self.object_handlers[args[0]]
     self.log.info('Found open object handler %d in %s', args[0], storage.name)
     ret, data = storage.object_get_attr(args[0], attr_id)
-    if ret == optee_const.OpteeErrorCode.SUCCESS:
+    if ret == optee_error.OpteeErrorCode.SUCCESS:
       buf_size = ta.u32_read(args[3])
       out_size = buf_size
       if buf_size:
@@ -1123,7 +1128,7 @@ class Optee:
   #             const struct utee_attribute *usr_params,
   #             unsigned long param_count, unsigned long derived_key)
   def syscall_cryp_derive_key(self, ta: ta_base.Ta,
-                              args: List[int]) -> optee_const.OpteeErrorCode:
+                              args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to derive key.
 
     Args:
@@ -1135,27 +1140,27 @@ class Optee:
            [3]: derived key
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 4:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     self.log.info('Get state id %d', args[0])
     if args[1] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     attrs = []
     if args[2]:
-      attr_size = optee_types.OpteeUteeAttribute.size()
+      attr_size = utee_attr.OpteeUteeAttribute.size()
       total_size = attr_size * args[2]
       data = ta.mem_read(args[1], total_size)
 
       off = 0
       for _ in range(args[2]):
-        attr = optee_types.OpteeUteeAttribute.create(data[off:])
-        if isinstance(attr, optee_types.OpteeUteeAttributeMemory):
+        attr = utee_attr.OpteeUteeAttribute.create(data[off:])
+        if isinstance(attr, utee_attr.OpteeUteeAttributeMemory):
           if attr.addr and attr.size:
             attr.data = ta.mem_read(attr.addr, attr.size)
         off += attr_size
@@ -1167,7 +1172,7 @@ class Optee:
   #                       const void *iv __maybe_unused,
   #                       size_t iv_len __maybe_unused)
   def syscall_hash_init(self, ta: ta_base.Ta,
-                        args: List[int]) -> optee_const.OpteeErrorCode:
+                        args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to init hash context.
 
     Args:
@@ -1178,12 +1183,12 @@ class Optee:
            [2]: size of IV buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
 
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     state = args[0]
     iv = b''
@@ -1195,7 +1200,7 @@ class Optee:
   # TEE_Result syscall_hash_update(unsigned long state, const void *chunk,
   #               size_t chunk_size)
   def syscall_hash_update(self, ta: ta_base.Ta,
-                          args: List[int]) -> optee_const.OpteeErrorCode:
+                          args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to hash chunk of data.
 
     Args:
@@ -1206,18 +1211,18 @@ class Optee:
            [2]: size of data chunk buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
     if len(args) < 3:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     state = args[0]
     if args[1] == 0 and args[2]:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[2] == 0:
-      return optee_const.OpteeErrorCode.SUCCESS
+      return optee_error.OpteeErrorCode.SUCCESS
 
     chunk = ta.mem_read(args[1], args[2])
 
@@ -1226,7 +1231,7 @@ class Optee:
   # TEE_Result syscall_hash_final(unsigned long state, const void *chunk,
   #               size_t chunk_size, void *hash, uint64_t *hash_len)
   def syscall_hash_final(self, ta: ta_base.Ta,
-                         args: List[int]) -> optee_const.OpteeErrorCode:
+                         args: List[int]) -> optee_error.OpteeErrorCode:
     """Syscall to finalize hash calculation.
 
     Args:
@@ -1239,76 +1244,76 @@ class Optee:
            [4]: size of result buffer
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
     if len(args) < 5:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     state = args[0]
     if args[1] == 0 and args[2]:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     out_hash = args[3]
     out_len = args[4]
 
     if out_hash == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     chunk = ta.mem_read(args[1], args[2])
 
     ret, h = self.crypto_module.hash_final(state, chunk)
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       return ret
 
     if len(h) > out_len:
-      return optee_const.OpteeErrorCode.ERROR_SHORT_BUFFER
+      return optee_error.OpteeErrorCode.ERROR_SHORT_BUFFER
 
     ta.mem_write(out_hash, h)
     ta.u32_write(out_len, len(h))
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_get_property_name_to_index(unsigned long prop_set,
   #               void *name,
   #               unsigned long name_len,
   #               uint32_t *index)
   def syscall_get_property_name_to_index(
-      self, ta: ta_base.Ta, args: List[int]) -> optee_const.OpteeErrorCode:
+      self, ta: ta_base.Ta, args: List[int]) -> optee_error.OpteeErrorCode:
     """Get an index of property in the property set.
 
     Args:
      ta: TA emulator instance
      args: argument list should have at least 4 elements:
         [0]: the type of property set, defined by
-                 optee_const.OpteePropsetType
+                 optee_property.OpteePropsetType
         [1]: pointer to a buffer with  name
         [2]: size of name buffer.
         [3]: pointer to store the index
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
     if len(args) < 4:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[1] == 0 or args[2] == 0 or args[3] == 0:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     name = ta.mem_read(args[1], args[2])
     self.log.info('Get index for "%s" property from 0x%08x propset.',
                   name, args[0])
     if args[0] not in self.prop_sets:
-      return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+      return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
     prop_set = self.prop_sets[args[0]]
     if name not in prop_set:
-      return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+      return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
     idx = prop_set.index(name)
 
     ta.u32_write(args[3], idx)
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS
 
   # TEE_Result syscall_get_property(unsigned long prop_set,
   #      unsigned long index,
@@ -1316,14 +1321,14 @@ class Optee:
   #      void *buf, uint32_t *blen,
   #      uint32_t *prop_type)
   def syscall_get_property(self, ta: ta_base.Ta,
-                           args: List[int]) -> optee_const.OpteeErrorCode:
+                           args: List[int]) -> optee_error.OpteeErrorCode:
     """Get the property by index.
 
     Args:
      ta: TA emulator instance
      args: argument list should have at least 7 elements:
         [0]: the type of property set, defined by
-                 optee_const.OpteePropsetType
+                 optee_property.OpteePropsetType
         [1]: property index
         [2]: pointer to a buffer with  name
         [3]: size of name buffer.
@@ -1332,19 +1337,19 @@ class Optee:
         [6]: pointer to store the property type
 
     Returns:
-      optee_const.OpteeErrorCode return code
+      optee_error.OpteeErrorCode return code
     """
     self.args_dump(args)
     if len(args) < 7:
-      return optee_const.OpteeErrorCode.ERROR_BAD_PARAMETERS
+      return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
 
     if args[0] not in self.prop_sets:
-      return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+      return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
     prop_set = self.prop_sets[args[0]]
     idx = args[1]
     if idx > (len(prop_set) - 1):
-      return optee_const.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
+      return optee_error.OpteeErrorCode.ERROR_ITEM_NOT_FOUND
 
     prop = prop_set[idx]
 
@@ -1365,4 +1370,4 @@ class Optee:
     if args[6] != 0:
       ta.u32_write(args[6], int(prop.type))
 
-    return optee_const.OpteeErrorCode.SUCCESS
+    return optee_error.OpteeErrorCode.SUCCESS

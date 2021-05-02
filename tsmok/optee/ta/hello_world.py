@@ -5,9 +5,9 @@ import logging
 import uuid
 import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
-import tsmok.optee.const as optee_const
+import tsmok.optee.error as optee_error
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.types as optee_types
+import tsmok.optee.ta_param as ta_param
 
 
 class HelloWorldTa:
@@ -37,7 +37,7 @@ class HelloWorldTa:
 
     sid = 1
     ret, _ = self.ta.open_session(sid, [])
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       raise ta_error.TaExit(ret, 'TA Open session exited with return code '
                             f'{str(ret)}')
 
@@ -51,7 +51,7 @@ class HelloWorldTa:
     self.session = None
 
     ret = self.ta.close_session(sid)
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       raise ta_error.TaExit(ret, 'TA Close session exited with return code '
                             f'{str(ret)}')
 
@@ -73,11 +73,11 @@ class HelloWorldTa:
 
     cmd = int(self.Cmd.INCREMENT)
     params = [
-        optee_types.OpteeTaParamValueInOut(),
+        ta_param.OpteeTaParamValueInOut(),
     ]
     params[0].a = value
     ret, params = self.ta.invoke_command(self.session, cmd, params)
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       raise ta_error.TaExit(ret, 'Write Efuse exited with return '
                             f'code {str(ret)}')
 
@@ -101,11 +101,11 @@ class HelloWorldTa:
 
     cmd = int(self.Cmd.DECREMENT)
     params = [
-        optee_types.OpteeTaParamValueInOut(),
+        ta_param.OpteeTaParamValueInOut(),
     ]
     params[0].a = value
     ret, params = self.ta.invoke_command(self.session, cmd, params)
-    if ret != optee_const.OpteeErrorCode.SUCCESS:
+    if ret != optee_error.OpteeErrorCode.SUCCESS:
       raise ta_error.TaExit(ret, 'Write Efuse exited with return '
                             f'code {str(ret)}')
 

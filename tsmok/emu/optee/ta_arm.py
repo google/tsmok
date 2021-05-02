@@ -9,10 +9,11 @@ import tsmok.common.memory as memory
 import tsmok.common.ta_error as ta_error
 import tsmok.emu.arm as arm
 import tsmok.emu.emu as emu
-import tsmok.optee.const as optee_const
+import tsmok.optee.error as optee_error
 import tsmok.optee.image_ta as image_ta
+import tsmok.optee.syscalls as syscalls
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.types as optee_types
+import tsmok.optee.ta_param as ta_param
 
 
 class TaArmEmu(arm.ArmEmu, ta_base.Ta):
@@ -89,39 +90,39 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def open_session(
       self, sid: int,
-      params: List[optee_types.OpteeTaParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
+      params: List[ta_param.OpteeTaParam]
+      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
     self._log.info('Open Session: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     params_ptr = self.BUFFER_PTR
     self.tee.optee_params_load_to_memory(self, params_ptr, params)
     ret = self.call(self.image.entry_point,
-                    emu.RegContext(optee_const.OpteeEntryFunc.OPEN_SESSION,
+                    emu.RegContext(syscalls.OpteeEntryFunc.OPEN_SESSION,
                                    sid, params_ptr, 0))
 
     return ret, params
 
   def invoke_command(
       self, sid: int, cmd: int,
-      params: List[optee_types.OpteeTaParam]
-      ) -> (optee_const.OpteeErrorCode, List[optee_types.OpteeTaParam]):
+      params: List[ta_param.OpteeTaParam]
+      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
     self._log.info('Invoke Command: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     params_ptr = self.BUFFER_PTR
     if params:
-      next_addr = params_ptr + optee_const.OPTEE_PARAMS_DATA_SIZE
+      next_addr = params_ptr + ta_param.OPTEE_PARAMS_DATA_SIZE
       # TODO(dmitryy) make this more readable
       for p in params:
-        if isinstance(p, optee_types.OpteeTaParamMemref):
+        if isinstance(p, ta_param.OpteeTaParamMemref):
           if p.data or p.size:
             p.addr = next_addr
             if p.data:
               left_ram = self.BUFFER_SIZE - (p.addr - self.BUFFER_PTR)
               if len(p.data) > left_ram:
                 self._log.error('Not enough memory to place parameters!')
-                return optee_const.OpteeErrorCode.ERROR_OUT_OF_MEMORY, params
+                return optee_error.OpteeErrorCode.ERROR_OUT_OF_MEMORY, params
               if not p.size:
                 p.size = len(p.data)
               next_addr += len(p.data)
@@ -132,9 +133,9 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
     self._log.info('Invoke command %s', cmd)
     ret = self.call(self.image.entry_point,
-                    emu.RegContext(optee_const.OpteeEntryFunc.INVOKE_COMMAND,
+                    emu.RegContext(syscalls.OpteeEntryFunc.INVOKE_COMMAND,
                                    sid, params_ptr, cmd))
-    if ret == optee_const.OpteeErrorCode.SUCCESS:
+    if ret == optee_error.OpteeErrorCode.SUCCESS:
       params = self.tee.optee_params_load_from_memory(self, params_ptr)
 
     return ret, params
@@ -144,5 +145,5 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     return self.call(self.image.entry_point,
-                     emu.RegContext(optee_const.OpteeEntryFunc.CLOSE_SESSION,
+                     emu.RegContext(syscalls.OpteeEntryFunc.CLOSE_SESSION,
                                     sid, 0, 0))
