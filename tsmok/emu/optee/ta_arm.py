@@ -6,6 +6,7 @@ from typing import List
 
 import tsmok.common.error as error
 import tsmok.common.memory as memory
+import tsmok.common.region_allocator as region_allocator
 import tsmok.common.ta_error as ta_error
 import tsmok.emu.arm as arm
 import tsmok.emu.emu as emu
@@ -30,6 +31,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
     self.tee = tee_os
     self.exception_handler[self.ExceptionType.SWI] = self.syscall_handler
+    self._buffer_pool = region_allocator.RegionAllocator(
+        self.BUFFER_PTR, self.BUFFER_SIZE)
 
   # Internal API
   # ==============================================
@@ -88,6 +91,19 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
                     memory.MemAccessPermissions.RW)
 
+  def loader_to_mem(self, regs, addr, data):
+    to_addr = addr
+    if not to_addr:
+      reg = self._buffer_pool.allocate(len(data))
+      to_addr = reg.addr
+      if regs:
+        regs.append(reg)
+    self.mem_write(to_addr, data)
+    return to_addr
+
+  def loader_from_mem(self, addr, size):
+    return self.mem_read(addr, size)
+
   def open_session(
       self, sid: int,
       params: List[ta_param.OpteeTaParam]
@@ -95,11 +111,20 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self._log.info('Open Session: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
-    params_ptr = self.BUFFER_PTR
-    self.tee.optee_params_load_to_memory(self, params_ptr, params)
+    regs = []
+    param_arg = ta_param.OpteeTaParamArgs(params)
+    addr = param_arg.load_to_mem(lambda a, d: self.loader_to_mem(regs, a, d),
+                                 None)
     ret = self.call(self.image.entry_point,
                     emu.RegContext(syscalls.OpteeEntryFunc.OPEN_SESSION,
-                                   sid, params_ptr, 0))
+                                   sid, addr, 0))
+
+    if ret == optee_error.OpteeErrorCode.SUCCESS:
+      param_arg.load_from_mem(self.loader_from_mem, addr)
+      params = param_arg.params
+
+    for reg in regs:
+      self._buffer_pool.free(reg.id)
 
     return ret, params
 
@@ -110,33 +135,20 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self._log.info('Invoke Command: id %d', sid)
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
-    params_ptr = self.BUFFER_PTR
-    if params:
-      next_addr = params_ptr + ta_param.OPTEE_PARAMS_DATA_SIZE
-      # TODO(dmitryy) make this more readable
-      for p in params:
-        if isinstance(p, ta_param.OpteeTaParamMemref):
-          if p.data or p.size:
-            p.addr = next_addr
-            if p.data:
-              left_ram = self.BUFFER_SIZE - (p.addr - self.BUFFER_PTR)
-              if len(p.data) > left_ram:
-                self._log.error('Not enough memory to place parameters!')
-                return optee_error.OpteeErrorCode.ERROR_OUT_OF_MEMORY, params
-              if not p.size:
-                p.size = len(p.data)
-              next_addr += len(p.data)
-            else:
-              next_addr += p.size
-
-    self.tee.optee_params_load_to_memory(self, params_ptr, params)
-
+    regs = []
+    param_arg = ta_param.OpteeTaParamArgs(params)
+    addr = param_arg.load_to_mem(lambda a, d: self.loader_to_mem(regs, a, d),
+                                 None)
     self._log.info('Invoke command %s', cmd)
     ret = self.call(self.image.entry_point,
                     emu.RegContext(syscalls.OpteeEntryFunc.INVOKE_COMMAND,
-                                   sid, params_ptr, cmd))
+                                   sid, addr, cmd))
     if ret == optee_error.OpteeErrorCode.SUCCESS:
-      params = self.tee.optee_params_load_from_memory(self, params_ptr)
+      param_arg.load_from_mem(self.loader_from_mem, addr)
+      params = param_arg.params
+
+    for reg in regs:
+      self._buffer_pool.free(reg.id)
 
     return ret, params
 

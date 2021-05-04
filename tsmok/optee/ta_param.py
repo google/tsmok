@@ -2,7 +2,6 @@
 
 import enum
 import struct
-from typing import List
 
 import tsmok.common.error as error
 import tsmok.optee.message as message
@@ -18,18 +17,89 @@ class OpteeTaParamType(enum.IntEnum):
   MEMREF_INOUT = 7
 
 
-OPTEE_NUM_PARAMS = 4
-# struct utee_params {
-#   uint64_t types;
-#       /* vals[n * 2]     corresponds to either value.a or memref.buffer
-#        * vals[n * 2 + ]  corresponds to either value.b or memref.size
-#        * when converting to/from struct tee_ta_param
-#        */
-#   uint64_t vals[TEE_NUM_PARAMS * 2];
-# };
-OPTEE_PARAMS_PARSE_FORMAT = '<9Q'
+class OpteeTaParamArgs:
+  """Container for OPTEE TA parameters."""
 
-OPTEE_PARAMS_DATA_SIZE = struct.calcsize(OPTEE_PARAMS_PARSE_FORMAT)
+  NUM_PARAMS = 4
+  FORMAT = '<9Q'
+
+  def __init__(self, params=None):
+    if params and len(params) > self.NUM_PARAMS:
+      raise ValueError('Wrong number of parameters')
+    self.addr = 0
+    self.params = params or []
+    for i in range(self.NUM_PARAMS - len(self.params)):
+      self.params.append(OpteeTaParamNone())
+
+  @staticmethod
+  def size():
+    return struct.calcsize(OpteeTaParamArgs.FORMAT)
+
+  def load_to_mem(self, loader, addr):
+    """Loads the Optee parameters to memery.
+
+    Args:
+      loader: a function to load parameters data to Emu memory.
+      addr: the address to load data. If NULL, the `loader` function should
+            allocate the address.
+
+    Returns:
+      Address where parameters was loaded.
+
+    Raises:
+      ValueError, if wrong parameters were specified.
+    """
+    if not callable(loader):
+      raise ValueError('loader argument is not a function')
+
+    param_types = 0
+    values = []
+    if self.params:
+      for i, p in enumerate(self.params):
+        if isinstance(p, OpteeTaParamMemref):
+          data = p.data
+          if p.size and not data:
+            data = b'\x00' * p.size
+          if data:
+            p.addr = loader(p.addr, data)
+            if not p.size:
+              p.size = len(data)
+        param_types |= (int(p.type) & 0xf) << (i * 4)
+        values += p.values()
+
+    data = struct.pack(self.FORMAT, param_types, *values)
+    return loader(addr, data)
+
+  def load_from_mem(self, loader, addr):
+    """Load OPTEE TA parameters from memory.
+
+    Args:
+      loader: a function to load parameters data from Emu memory.
+      addr: the address to load data from.
+
+    Returns:
+      None
+
+    Raises:
+      ValueError, if wrong parameters were specified.
+    """
+
+    if not callable(loader):
+      raise ValueError('loader argument is not a function')
+
+    data = loader(addr, self.size())
+    data = struct.unpack(self.FORMAT, data)
+    self.params = []
+    for i in range(self.NUM_PARAMS):
+      t = OpteeTaParamType((data[0] >> (i * 4)) & 0xf)
+      if t == OpteeTaParamType.NONE:
+        continue
+
+      p = OpteeTaParam.get_type(t)(data[1 + i * 2], data[1 + i * 2 + 1])
+      if isinstance(p, OpteeTaParamMemref):
+        if p.addr != 0 and p.size != 0:
+          p.data = loader(p.addr, p.size)
+      self.params.append(p)
 
 
 class OpteeTaParam:
@@ -193,33 +263,3 @@ class OpteeTaParamNone(OpteeTaParam):
 
   def __str__(self):
     return f'{str(self.type)}'
-
-
-def optee_params_from_data(data):
-  """Converts OpteeTaParams into plain bytes."""
-
-  data = struct.unpack(OPTEE_PARAMS_PARSE_FORMAT, data)
-  params = []
-  for i in range(OPTEE_NUM_PARAMS):
-    t = OpteeTaParamType((data[0] >> (i * 4)) & 0xf)
-    if t != OpteeTaParamType.NONE:
-      params.append(OpteeTaParam.get_type(t)(data[1 + i * 2],
-                                             data[1 + i * 2 + 1]))
-
-  return params
-
-
-def optee_params_to_data(params: List[OpteeTaParam]):
-  """Converts plain bytes into OpteeTaParams."""
-  for i in range(OPTEE_NUM_PARAMS - len(params)):
-    params.append(OpteeTaParamNone())
-
-  param_types = 0
-  values = []
-  for i in range(OPTEE_NUM_PARAMS):
-    p = params[i]
-    param_types |= (int(p.type) & 0xf) << (i * 4)
-    values += p.values()
-
-  return struct.pack(OPTEE_PARAMS_PARSE_FORMAT, param_types,
-                     *values)

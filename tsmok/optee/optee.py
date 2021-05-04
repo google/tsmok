@@ -195,39 +195,6 @@ class Optee:
     for i in range(len(args)):
       self.log.debug('\targs[%d]: 0x%08x', i, args[i])
 
-  def optee_params_load_from_memory(self, ta: ta_base.Ta, addr: int
-                                   ) -> List[ta_param.OpteeTaParam]:
-    buf = ta.mem_read(addr, ta_param.OPTEE_PARAMS_DATA_SIZE)
-    params = ta_param.optee_params_from_data(buf)
-    for p in params:
-      if isinstance(p, ta_param.OpteeTaParamMemref):
-        if p.addr != 0 and p.size != 0:
-          p.data = ta.mem_read(p.addr, p.size)
-
-    return params
-
-  def optee_params_load_to_memory(self, ta: ta_base.Ta, addr: int,
-                                  params: List[ta_param.OpteeTaParam]
-                                 ) -> None:
-    """Loads ta_param.OpteeTaParam list into TA memory.
-
-    Args:
-      ta: TA emulator instance
-      addr: Address in the TA memory space where parameters will be loaded
-      params: the list of ta_param.OpteeTaParam paramenters
-
-    Returns: None
-    """
-    buf = ta_param.optee_params_to_data(params)
-    for p in params:
-      if isinstance(p, ta_param.OpteeTaParamMemref):
-        if p.data:
-          if p.addr == 0 or len(p.data) > p.size:
-            raise error.Error(f'wrong format or data size: {str(p)}')
-          ta.mem_write(p.addr, p.data)
-
-    ta.mem_write(addr, buf)
-
   def syscall_handler(self, ta, syscall, args):
     if syscall not in self.syscall_callbacks:
       raise error.Error(f'Unhandled Syscall {syscall}. Exit')
@@ -292,11 +259,15 @@ class Optee:
       self.log.info('Found external TA: %s', target_ta.get_name())
 
       sid = self.gen_sid()
-      params = self.optee_params_load_from_memory(ta, args[2])
-      ret, params = target_ta.open_session(sid, params)
+      param_arg = ta_param.OpteeTaParamArgs()
+      param_arg.load_from_mem(ta.loader_from_mem, args[2])
+
+      ret, params = target_ta.open_session(sid, param_arg.params)
       if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.open_sessions[sid] = target_ta
-        self.optee_params_load_to_memory(ta, args[2], params)
+        param_args = ta_param.OpteeTaParamArgs(params)
+        param_args.load_to_mem(lambda a, d: ta.loader_to_mem(None, a, d),
+                               args[2])
         ta.mem_write(args[3], struct.pack('I', sid))
       return ret
 
@@ -356,9 +327,14 @@ class Optee:
     if args[0] in self.open_sessions:
       target_ta = self.open_sessions[args[0]]
       self.log.info('Found open session for TA: %s', target_ta.get_uuid())
-      params = self.optee_params_load_from_memory(ta, args[3])
-      ret, params = target_ta.invoke_command(args[0], args[2], params)
-      self.optee_params_load_to_memory(ta, args[3], params)
+      param_arg = ta_param.OpteeTaParamArgs()
+      param_arg.load_from_mem(ta.loader_from_mem, args[3])
+      ret, params = target_ta.invoke_command(args[0], args[2],
+                                             param_arg.params)
+      if ret == optee_error.OpteeErrorCode.SUCCESS:
+        param_args = ta_param.OpteeTaParamArgs(params)
+        param_args.load_to_mem(
+            lambda a, d: ta.loader_to_mem(None, a, d), args[3])
       return ret
 
     return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS
