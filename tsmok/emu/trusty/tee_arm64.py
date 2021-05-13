@@ -176,6 +176,9 @@ class TrustyArm64Emu(arm64.Arm64Emu):
     return self.call(pc, emu.RegContext(cmd, arg0, arg1, arg2, None, None,
                                         None, client_id))
 
+  def syscall(self, *args):
+    raise NotImplementedError()
+
   def smc_call_buf_id(self, cmd, cid, buf_id, size):
     return self.smc_call(cmd, cid, buf_id & 0xFFFFFFFF,
                          (buf_id >> 32) & 0xFFFFFFFF, size)

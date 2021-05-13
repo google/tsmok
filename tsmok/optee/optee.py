@@ -260,14 +260,13 @@ class Optee:
 
       sid = self.gen_sid()
       param_arg = ta_param.OpteeTaParamArgs()
-      param_arg.load_from_mem(ta.loader_from_mem, args[2])
+      param_arg.load_from_mem(ta.mem_read, args[2])
 
       ret, params = target_ta.open_session(sid, param_arg.params)
       if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.open_sessions[sid] = target_ta
         param_args = ta_param.OpteeTaParamArgs(params)
-        param_args.load_to_mem(lambda a, d: ta.loader_to_mem(None, a, d),
-                               args[2])
+        param_args.load_to_mem(ta.mem_write, args[2])
         ta.mem_write(args[3], struct.pack('I', sid))
       return ret
 
@@ -328,13 +327,12 @@ class Optee:
       target_ta = self.open_sessions[args[0]]
       self.log.info('Found open session for TA: %s', target_ta.get_uuid())
       param_arg = ta_param.OpteeTaParamArgs()
-      param_arg.load_from_mem(ta.loader_from_mem, args[3])
+      param_arg.load_from_mem(ta.mem_read, args[3])
       ret, params = target_ta.invoke_command(args[0], args[2],
                                              param_arg.params)
       if ret == optee_error.OpteeErrorCode.SUCCESS:
         param_args = ta_param.OpteeTaParamArgs(params)
-        param_args.load_to_mem(
-            lambda a, d: ta.loader_to_mem(None, a, d), args[3])
+        param_args.load_to_mem(ta.mem_write, args[3])
       return ret
 
     return optee_error.OpteeErrorCode.ERROR_BAD_PARAMETERS

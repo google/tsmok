@@ -2,7 +2,7 @@
 
 import logging
 import struct
-from typing import List
+from typing import List, Tuple
 
 import tsmok.common.error as error
 import tsmok.common.memory as memory
@@ -24,6 +24,7 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
   BUFFER_PTR = 0xFF000000
   BUFFER_SIZE = 4* 1024 * 1024
   STACK_PTR = 0xff000000
+  MAX_ARGS = 3
 
   def __init__(self, tee_os, log_level=logging.ERROR):
     arm.ArmEmu.__init__(self, '[TA]', log_level)
@@ -75,8 +76,29 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
     return args
 
+  def _load_args_to_mem(self, regs, addr, data):
+    to_addr = addr
+    if not to_addr:
+      reg = self._buffer_pool.allocate(len(data))
+      to_addr = reg.addr
+      if regs:
+        regs.append(reg)
+    self.mem_write(to_addr, data)
+    return to_addr
+
   # External API
   # ===============================================================
+  def syscall(self, num, *args):
+    if len(args) > self.MAX_ARGS:
+      raise ValueError('Wrong number of arguments')
+    return self.call(self.image.entry_point, emu.RegContext(num, *args))
+
+  def allocate_shm_region(self, size):
+    return self._buffer_pool.allocate(size)
+
+  def free_shm_region(self, rid):
+    return self._buffer_pool.free(rid)
+
   def reset(self):
     self.stack_reset()
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
@@ -91,71 +113,46 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
                     memory.MemAccessPermissions.RW)
 
-  def loader_to_mem(self, regs, addr, data):
-    to_addr = addr
-    if not to_addr:
-      reg = self._buffer_pool.allocate(len(data))
-      to_addr = reg.addr
-      if regs:
-        regs.append(reg)
-    self.mem_write(to_addr, data)
-    return to_addr
-
-  def loader_from_mem(self, addr, size):
-    return self.mem_read(addr, size)
-
   def open_session(
       self, sid: int,
       params: List[ta_param.OpteeTaParam]
-      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
+      ) -> Tuple[optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]]:
     self._log.info('Open Session: id %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     regs = []
     param_arg = ta_param.OpteeTaParamArgs(params)
-    addr = param_arg.load_to_mem(lambda a, d: self.loader_to_mem(regs, a, d),
-                                 None)
-    ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeEntryFunc.OPEN_SESSION,
-                                   sid, addr, 0))
+    addr = param_arg.load_to_mem(
+        lambda a, d: self._load_args_to_mem(regs, a, d), None)
+    ret = self.syscall(syscalls.OpteeEntryFunc.OPEN_SESSION, sid, addr, 0)
 
     if ret == optee_error.OpteeErrorCode.SUCCESS:
-      param_arg.load_from_mem(self.loader_from_mem, addr)
+      param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
     for reg in regs:
       self._buffer_pool.free(reg.id)
-
     return ret, params
 
   def invoke_command(
       self, sid: int, cmd: int,
       params: List[ta_param.OpteeTaParam]
-      ) -> (optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]):
+      ) -> Tuple[optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]]:
     self._log.info('Invoke Command: id %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     regs = []
     param_arg = ta_param.OpteeTaParamArgs(params)
-    addr = param_arg.load_to_mem(lambda a, d: self.loader_to_mem(regs, a, d),
-                                 None)
+    addr = param_arg.load_to_mem(
+        lambda a, d: self._load_args_to_mem(regs, a, d), None)
     self._log.info('Invoke command %s', cmd)
-    ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeEntryFunc.INVOKE_COMMAND,
-                                   sid, addr, cmd))
+    ret = self.syscall(syscalls.OpteeEntryFunc.INVOKE_COMMAND, sid, addr, cmd)
     if ret == optee_error.OpteeErrorCode.SUCCESS:
-      param_arg.load_from_mem(self.loader_from_mem, addr)
+      param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
     for reg in regs:
       self._buffer_pool.free(reg.id)
-
     return ret, params
 
   def close_session(self, sid: int):
     self._log.info('Close Session: sid %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
-
-    return self.call(self.image.entry_point,
-                     emu.RegContext(syscalls.OpteeEntryFunc.CLOSE_SESSION,
-                                    sid, 0, 0))
+    return self.syscall(syscalls.OpteeEntryFunc.CLOSE_SESSION, sid, 0, 0)

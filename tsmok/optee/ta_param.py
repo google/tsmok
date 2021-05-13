@@ -1,5 +1,6 @@
 """OPTEE TA Parameter types."""
 
+import abc
 import enum
 import struct
 
@@ -26,8 +27,10 @@ class OpteeTaParamArgs:
   def __init__(self, params=None):
     if params and len(params) > self.NUM_PARAMS:
       raise ValueError('Wrong number of parameters')
-    self.addr = 0
     self.params = params or []
+    if not all(isinstance(t, OpteeTaParam) for t in self.params):
+      raise TypeError('At least one of parameter has wrong type')
+
     for i in range(self.NUM_PARAMS - len(self.params)):
       self.params.append(OpteeTaParamNone())
 
@@ -95,18 +98,27 @@ class OpteeTaParamArgs:
       if t == OpteeTaParamType.NONE:
         continue
 
-      p = OpteeTaParam.get_type(t)(data[1 + i * 2], data[1 + i * 2 + 1])
+      p = OpteeTaParam.get_type(t)()
+      p.init_from_values(data[1 + i * 2], data[1 + i * 2 + 1])
       if isinstance(p, OpteeTaParamMemref):
         if p.addr != 0 and p.size != 0:
           p.data = loader(p.addr, p.size)
       self.params.append(p)
 
 
-class OpteeTaParam:
+class OpteeTaParam(abc.ABC):
   """Defines Optee TA params type."""
 
   def __init__(self, t):
     self.type = t
+
+  @abc.abstractmethod
+  def init_from_values(self, val1, val2):
+    raise NotImplementedError()
+
+  @abc.abstractmethod
+  def values(self):
+    raise NotImplementedError()
 
   @staticmethod
   def get_type(t):
@@ -169,6 +181,8 @@ class OpteeTaParam:
 class OpteeTaParamValue(OpteeTaParam):
   """Base class for OpteeTaParam value."""
 
+  FMT = '<2I'
+
   def __init__(self, t, a=0, b=0):
     if t not in [
         OpteeTaParamType.VALUE_INPUT,
@@ -180,8 +194,15 @@ class OpteeTaParamValue(OpteeTaParam):
     self.a = a
     self.b = b
 
+  def init_from_values(self, val1, val2):
+    self.a = val1
+    self.b = val2
+
   def values(self):
     return [self.a, self.b]
+
+  def __bytes__(self):
+    return struct.pack(self.FMT, self.a, self.b)
 
   def __str__(self):
     return f'{str(self.type)}: a = 0x{self.a:08x}, b = {self.b:08x}'
@@ -211,7 +232,7 @@ class OpteeTaParamValueInOut(OpteeTaParamValue):
 class OpteeTaParamMemref(OpteeTaParam):
   """Base class for OpteeTaParam memref."""
 
-  def __init__(self, t, addr: int = 0, size: int = 0):
+  def __init__(self, t, data: bytes = None, addr: int = 0, size: int = 0):
     if t not in [
         OpteeTaParamType.MEMREF_INPUT,
         OpteeTaParamType.MEMREF_OUTPUT,
@@ -221,10 +242,20 @@ class OpteeTaParamMemref(OpteeTaParam):
     OpteeTaParam.__init__(self, t)
     self.addr = addr
     self.size = size
-    self.data = None
+    self.data = data or b''
 
   def values(self):
     return [self.addr, self.size]
+
+  def init_from_values(self, val1, val2):
+    self.addr = val1
+    self.size = val2
+
+  def __bytes__(self):
+    data = self.data
+    if not data and self.size:
+      data = b'\x00' * self.size
+    return data
 
   def __str__(self):
     return (f'{str(self.type)}: buffer addr = 0x{self.addr:08x}, size = '
@@ -233,27 +264,28 @@ class OpteeTaParamMemref(OpteeTaParam):
 
 class OpteeTaParamMemrefInput(OpteeTaParamMemref):
 
-  def __init__(self, addr=0, size=0):
+  def __init__(self, data=None, addr=0, size=0):
     OpteeTaParamMemref.__init__(self, OpteeTaParamType.MEMREF_INPUT,
-                                addr, size)
+                                data, addr, size)
 
 
 class OpteeTaParamMemrefOutput(OpteeTaParamMemref):
 
-  def __init__(self, addr=0, size=0):
+  def __init__(self, data=None, addr=0, size=0):
     OpteeTaParamMemref.__init__(self,
                                 OpteeTaParamType.MEMREF_OUTPUT,
-                                addr, size)
+                                data, addr, size)
 
 
 class OpteeTaParamMemrefInOut(OpteeTaParamMemref):
 
-  def __init__(self, addr=0, size=0):
+  def __init__(self, data=None, addr=0, size=0):
     OpteeTaParamMemref.__init__(self, OpteeTaParamType.MEMREF_INOUT,
-                                addr, size)
+                                data, addr, size)
 
 
 class OpteeTaParamNone(OpteeTaParam):
+  """OPTEE TA None param."""
 
   def __init__(self, *_):
     OpteeTaParam.__init__(self, OpteeTaParamType.NONE)
@@ -261,5 +293,12 @@ class OpteeTaParamNone(OpteeTaParam):
   def values(self):
     return [0, 0]
 
+  def init_from_values(self, val1, val2):
+    # do nothing
+    pass
+
   def __str__(self):
     return f'{str(self.type)}'
+
+  def __bytes__(self):
+    return b''

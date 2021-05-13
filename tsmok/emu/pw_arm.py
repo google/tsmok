@@ -596,3 +596,6 @@ class PwArmV7mEmu(arm.ArmEmu):
 
   def run(self):
     self.call(self.image.entry_point, emu.RegContext(0, 0, 0, 0))
+
+  def syscall(self):
+    raise NotImplementedError()

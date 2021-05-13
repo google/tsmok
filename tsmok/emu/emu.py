@@ -932,3 +932,14 @@ class Emu(abc.ABC):
     if self.exception:
       raise self.exception
     return self._ret0
+
+  @abc.abstractmethod
+  def syscall(self, *args):
+    raise NotImplementedError()
+
+  def allocate_shm_region(self, size: int):
+    raise NotImplementedError()
+
+  def free_shm_region(self, rid: int):
+    raise NotImplementedError()
+
