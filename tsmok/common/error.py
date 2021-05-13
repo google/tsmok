@@ -1,5 +1,7 @@
 """Defines main exceptions used in code."""
 
+import os
+import signal
 import sys
 import traceback
 
@@ -34,3 +36,22 @@ class SigIllError(Error):
 
   def __init__(self, message=''):
     Error.__init__(self, message)
+
+
+def ConvertErrorToCrash(exc):
+  """Converts *Error exception to application crash with corresponding signal.
+
+  This function should be called to indicate to AFL that a crash occurred
+  during emulation.
+
+  Args:
+    exc: tsmok.common.error.*Error exception
+  """
+  if isinstance(exc, SegfaultError):
+    os.kill(os.getpid(), signal.SIGSEGV)
+  if isinstance(exc, SigIllError):
+    # Invalid instruction - throw SIGILL
+    os.kill(os.getpid(), signal.SIGILL)
+  else:
+    # Not sure what happened - throw SIGABRT
+    os.kill(os.getpid(), signal.SIGABRT)
