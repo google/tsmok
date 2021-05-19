@@ -123,7 +123,7 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     param_arg = ta_param.OpteeTaParamArgs(params)
     addr = param_arg.load_to_mem(
         lambda a, d: self._load_args_to_mem(regs, a, d), None)
-    ret = self.syscall(syscalls.OpteeEntryFunc.OPEN_SESSION, sid, addr, 0)
+    ret = self.syscall(syscalls.OpteeTaCall.OPEN_SESSION, sid, addr, 0)
 
     if ret == optee_error.OpteeErrorCode.SUCCESS:
       param_arg.load_from_mem(self.mem_read, addr)
@@ -144,7 +144,7 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     addr = param_arg.load_to_mem(
         lambda a, d: self._load_args_to_mem(regs, a, d), None)
     self._log.info('Invoke command %s', cmd)
-    ret = self.syscall(syscalls.OpteeEntryFunc.INVOKE_COMMAND, sid, addr, cmd)
+    ret = self.syscall(syscalls.OpteeTaCall.INVOKE_COMMAND, sid, addr, cmd)
     if ret == optee_error.OpteeErrorCode.SUCCESS:
       param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
@@ -155,4 +155,4 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def close_session(self, sid: int):
     self._log.info('Close Session: sid %d', sid)
-    return self.syscall(syscalls.OpteeEntryFunc.CLOSE_SESSION, sid, 0, 0)
+    return self.syscall(syscalls.OpteeTaCall.CLOSE_SESSION, sid, 0, 0)

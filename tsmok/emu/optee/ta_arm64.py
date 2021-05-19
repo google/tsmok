@@ -41,10 +41,10 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
   def syscall_handler(self, regs) -> None:
     try:
       if self.is_pstate_a64_mode():
-        syscall = syscalls.OpteeSysCalls(regs.reg8)
+        syscall = syscalls.OpteeSysCall(regs.reg8)
         args = self._get_args_x64(regs)
       else:
-        syscall = syscalls.OpteeSysCalls(regs.reg7)
+        syscall = syscalls.OpteeSysCall(regs.reg7)
         args = self._get_args_x32(regs)
 
       self._log.debug('[SWI] %s', syscall)
@@ -110,7 +110,6 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
   def syscall(self, num, *args):
     if len(args) > self.MAX_ARGS:
       raise ValueError('Wrong number of arguments')
-    print(args)
     return self.call(self.image.entry_point, emu.RegContext(num, *args))
 
   def allocate_shm_region(self, size):
@@ -148,7 +147,7 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
     addr = param_arg.load_to_mem(
         lambda a, d: self._load_arg_to_mem(regs, a, d), None)
     ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeEntryFunc.OPEN_SESSION,
+                    emu.RegContext(syscalls.OpteeTaCall.OPEN_SESSION,
                                    sid, addr, 0))
 
     if ret == optee_error.OpteeErrorCode.SUCCESS:
@@ -173,7 +172,7 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
         lambda a, d: self._load_arg_to_mem(regs, a, d), None)
     self._log.info('Invoke command %s', cmd)
     ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeEntryFunc.INVOKE_COMMAND,
+                    emu.RegContext(syscalls.OpteeTaCall.INVOKE_COMMAND,
                                    sid, addr, cmd))
     if ret == optee_error.OpteeErrorCode.SUCCESS:
       param_arg.load_from_mem(self.mem_read, addr)
@@ -189,5 +188,5 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
     self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     return self.call(self.image.entry_point,
-                     emu.RegContext(syscalls.OpteeEntryFunc.CLOSE_SESSION,
+                     emu.RegContext(syscalls.OpteeTaCall.CLOSE_SESSION,
                                     sid, 0, 0))

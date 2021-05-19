@@ -44,85 +44,85 @@ class Optee:
   def _setup(self):
     """Setup system call handlers."""
 
-    self.syscall_callbacks[syscalls.OpteeSysCalls.LOG] = self.syscall_log
-    self.syscall_callbacks[syscalls.OpteeSysCalls.PANIC] = self.syscall_panic
-    self.syscall_callbacks[syscalls.OpteeSysCalls.RETURN] = \
+    self.syscall_callbacks[syscalls.OpteeSysCall.LOG] = self.syscall_log
+    self.syscall_callbacks[syscalls.OpteeSysCall.PANIC] = self.syscall_panic
+    self.syscall_callbacks[syscalls.OpteeSysCall.RETURN] = \
         self.syscall_return
-    self.syscall_callbacks[syscalls.OpteeSysCalls.GET_PROPERTY_NAME_TO_INDEX] = \
+    self.syscall_callbacks[syscalls.OpteeSysCall.GET_PROPERTY_NAME_TO_INDEX] = \
         self.syscall_get_property_name_to_index
-    self.syscall_callbacks[syscalls.OpteeSysCalls.GET_PROPERTY] = \
+    self.syscall_callbacks[syscalls.OpteeSysCall.GET_PROPERTY] = \
         self.syscall_get_property
 
     # TA syscall
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .OPEN_TA_SESSION] = self.syscall_open_ta_session
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .INVOKE_TA_COMMAND] = self.syscall_invoke_ta_command
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CLOSE_TA_SESSION] = self.syscall_close_ta_session
 
     # Storage object syscall
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_OPEN] = self.syscall_storage_obj_open
-    self.syscall_callbacks[syscalls.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCall.
                            STORAGE_OBJ_CREATE] = self.syscall_storage_obj_create
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_READ] = self.syscall_storage_obj_read
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_DEL] = self.syscall_storage_obj_del
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_SEEK] = self.syscall_storage_obj_seek
-    self.syscall_callbacks[syscalls.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCall.
                            STORAGE_OBJ_RENAME] = self.syscall_storage_obj_rename
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_TRUNC] = self.syscall_storage_obj_trunc
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_OBJ_WRITE] = self.syscall_storage_obj_write
 
     # Storage enumerator syscall
-    self.syscall_callbacks[syscalls.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCall.
                            STORAGE_ENUM_ALLOC] = self.syscall_storage_alloc_enum
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_ENUM_FREE] = self.syscall_storage_free_enum
-    self.syscall_callbacks[syscalls.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCall.
                            STORAGE_ENUM_RESET] = self.syscall_storage_reset_enum
-    self.syscall_callbacks[syscalls.OpteeSysCalls.
+    self.syscall_callbacks[syscalls.OpteeSysCall.
                            STORAGE_ENUM_START] = self.syscall_storage_start_enum
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .STORAGE_ENUM_NEXT] = self.syscall_storage_next_enum
 
     # Crypt
     self.syscall_callbacks[
-        syscalls.OpteeSysCalls.CRYP_OBJ_CLOSE] = self.syscall_cryp_obj_close
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+        syscalls.OpteeSysCall.CRYP_OBJ_CLOSE] = self.syscall_cryp_obj_close
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_GET_INFO] = self.syscall_cryp_obj_get_info
     self.syscall_callbacks[
-        syscalls.OpteeSysCalls
+        syscalls.OpteeSysCall
         .CRYP_RANDOM_NUMBER_GENERATE] = self.syscall_cryp_random_number_generate
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_STATE_ALLOC] = self.syscall_cryp_state_alloc
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_STATE_FREE] = self.syscall_cryp_state_free
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_ALLOC] = self.syscall_cryp_obj_alloc
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_POPULATE] = self.syscall_cryp_obj_populate
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_RESET] = self.syscall_cryp_obj_reset
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_COPY] = self.syscall_cryp_obj_copy
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_OBJ_GET_ATTR] = self.syscall_cryp_obj_get_attr
 
-    self.syscall_callbacks[syscalls.OpteeSysCalls
+    self.syscall_callbacks[syscalls.OpteeSysCall
                            .CRYP_DERIVE_KEY] = self.syscall_cryp_derive_key
 
     self.syscall_callbacks[
-        syscalls.OpteeSysCalls.HASH_INIT] = self.syscall_hash_init
+        syscalls.OpteeSysCall.HASH_INIT] = self.syscall_hash_init
     self.syscall_callbacks[
-        syscalls.OpteeSysCalls.HASH_UPDATE] = self.syscall_hash_update
+        syscalls.OpteeSysCall.HASH_UPDATE] = self.syscall_hash_update
     self.syscall_callbacks[
-        syscalls.OpteeSysCalls.HASH_FINAL] = self.syscall_hash_final
+        syscalls.OpteeSysCall.HASH_FINAL] = self.syscall_hash_final
 
   def property_add(self, prop_type: optee_property.OpteePropsetType,
                    prop: optee_property.OpteeProperty):

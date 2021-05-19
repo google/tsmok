@@ -764,6 +764,6 @@ class OpteeArmEmu(arm.ArmEmu):
 
     mem = self._get_mem_for_args_from_session_id(sid, sz)
     self.mem_write(mem.start, data[:sz])
-    ret = self.syscall(sid, syscalls.OpteeSysCalls.LOG, mem.vaddr, sz,
+    ret = self.syscall(sid, syscalls.OpteeSysCall.LOG, mem.vaddr, sz,
                        None, None)
     return ret

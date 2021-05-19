@@ -3,7 +3,7 @@
 import enum
 
 
-class OpteeSysCalls(enum.IntEnum):
+class OpteeSysCall(enum.IntEnum):
   """Syscall numbers to OPTEE TEE."""
   RETURN = 0
   LOG = 1
@@ -80,7 +80,7 @@ class OpteeSysCalls(enum.IntEnum):
   CACHE_OPERATION = 70
 
 
-class OpteeEntryFunc(enum.IntEnum):
+class OpteeTaCall(enum.IntEnum):
   OPEN_SESSION = 0
   CLOSE_SESSION = 1
   INVOKE_COMMAND = 2
