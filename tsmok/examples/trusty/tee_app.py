@@ -85,6 +85,15 @@ def main(args):
   # MAP RAM
   tee.map_memory(LOAD_ADDR, RAM_SIZE, memory.MemAccessPermissions.RW)
 
+  # AVB TA
+  tee.map_memory(LOAD_ADDR + 0x2f000, 0x14000, memory.MemAccessPermissions.RX)
+  # STORAGE TA
+  tee.map_memory(LOAD_ADDR + 0x43000, 0x3c000, memory.MemAccessPermissions.RX)
+  # AVB TA
+  tee.map_memory(LOAD_ADDR + 0x7f000, 0x15000, memory.MemAccessPermissions.RX)
+  # AVB TA
+  tee.map_memory(LOAD_ADDR + 0x94000, 0xe000, memory.MemAccessPermissions.RX)
+
   # MAP SHARED Memory for IPC
   tee.shared_memory_add(SHM_ADDR, SHM_PAGES)
 
