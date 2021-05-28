@@ -110,7 +110,13 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
   def syscall(self, num, *args):
     if len(args) > self.MAX_ARGS:
       raise ValueError('Wrong number of arguments')
-    return self.call(self.image.entry_point, emu.RegContext(num, *args))
+    ret = self.call(self.image.entry_point, emu.RegContext(num, *args))
+    sp = self.get_stack_address()
+    # __ta_entry alloc 0x10 bytes at the beginning of the func to local
+    # parameters but did not released them before _utee_return.
+    # release manually.
+    self.set_stack_address(sp + 0x10)
+    return ret
 
   def allocate_shm_region(self, size):
     return self._buffer_pool.allocate(size)
