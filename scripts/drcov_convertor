@@ -42,8 +42,10 @@ def main(args):
   log = logging.getLogger('[MAIN]')
   log.setLevel(log_level)
 
+  log.info('DRCOV convertor.')
   try:
     rep = dwarf_representation.DwarfRepresentation(log_level=log_level)
+    log.info('Load source binary')
     rep.load_source(args.binary)
   except error.Error as e:
     log.debug('DWARF is not supported: %s.\n Use DISASM.', e.message)
