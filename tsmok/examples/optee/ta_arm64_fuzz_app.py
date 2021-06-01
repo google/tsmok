@@ -10,11 +10,12 @@ import tsmok.common.error as error
 import tsmok.coverage.collectors as cov_collectors
 import tsmok.coverage.drcov as cov_drcov
 import tsmok.emu.optee.ta_arm64 as ta_arm64
-import tsmok.optee.crypto_module as crypto_module
-import tsmok.optee.fuzzing.ta_fuzz as fuzz
+import tsmok.fuzzing.sys_fuzzer as fuzz
+import tsmok.optee.crypto as crypto_module
 import tsmok.optee.image_elf_ta as image_elf_ta
 import tsmok.optee.optee
-import tsmok.optee.storage.rpmb_simple as rpmb_simple
+import tsmok.optee.rpmb_simple as rpmb_simple
+import tsmok.optee.syscall_parser as optee_parser
 
 
 def sigint_handler(fuzzer, signum, frame):
@@ -50,7 +51,7 @@ def run(args):
 
   storage = rpmb_simple.StorageRpmbSimple(log_level=log_level)
   tee = tsmok.optee.optee.Optee(extension=None,
-                                crypto=crypto_module.CryptoModule(),
+                                crypto_module=crypto_module.CryptoModule(),
                                 log_level=log_level)
   tee.storage_add(storage)
 
@@ -58,8 +59,13 @@ def run(args):
   img = image_elf_ta.TaElfImage(args.binary)
   ta.load(img)
 
+  syscalls = dict()
+  for line in args.syscall_desc.read().splitlines():
+    call = optee_parser.parse(line)
+    syscalls[call.NR] = call
+
   log.info('Run TA fuzzer')
-  fuzzer = fuzz.TaFuzzer(ta, log_level=log_level)
+  fuzzer = fuzz.SysFuzzer(ta, syscalls, log_level=log_level)
   signal.signal(signal.SIGINT, lambda s, f: sigint_handler(fuzzer, s, f))
 
   if args.coverage:
@@ -69,7 +75,7 @@ def run(args):
     ta.coverage_register(collector)
 
   try:
-    is_child = fuzzer.init(fuzzer.Mode.INVOKE_COMMAND)
+    is_child = fuzzer.init()
   except error.Error as e:
     logging.root.error(e.message)
     return -1
@@ -85,7 +91,7 @@ def run(args):
     ret = fuzzer.run(data)
   except error.Error as e:
     logging.error(e.message)
-    fuzz.convert_error_to_crash(e)
+    error.ConvertErrorToCrash(e)
 
   if args.coverage and not is_child:
     collector.stop()
@@ -103,6 +109,9 @@ def parse_args():
   parser.add_argument('--coverage', '-c', type=argparse.FileType('wb'),
                       required=False, default=None,
                       help='coverage file')
+  parser.add_argument('--syscall-desc', '-s', type=argparse.FileType('r'),
+                      required=True, default=None,
+                      help='Syscall description file')
   parser.add_argument('binary', type=argparse.FileType('rb'),
                       help='binary path')
   parser.add_argument('input_file', type=str,
