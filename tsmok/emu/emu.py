@@ -110,22 +110,14 @@ class Emu(abc.ABC):
   def _hooks_setup(self) -> None:
     """Setup Unicorn hooks."""
 
-    # HOOKs for tracing
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_WRITE_INVALID,
-                                self._hook_invalid)
+    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_WRITE_PROT,
+                                self._hook_invalid_access)
     self._hooks_handlers.append(handler)
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ_INVALID,
-                                self._hook_invalid)
+    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ_PROT,
+                                self._hook_invalid_access)
     self._hooks_handlers.append(handler)
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_FETCH_INVALID,
-                                self._hook_invalid)
-    self._hooks_handlers.append(handler)
-
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ_AFTER,
-                                self._hook_mem_read_after)
-    self._hooks_handlers.append(handler)
-    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_WRITE,
-                                self._hook_mem_write)
+    handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_FETCH_PROT,
+                                self._hook_invalid_access)
     self._hooks_handlers.append(handler)
 
     handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_FETCH_UNMAPPED,
@@ -146,6 +138,12 @@ class Emu(abc.ABC):
     self._hooks_handlers.append(handler)
 
     if self._log_level <= logging.INFO:
+      handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ_AFTER,
+                                  self._hook_mem_read_after)
+      self._hooks_handlers.append(handler)
+      handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_WRITE,
+                                  self._hook_mem_write)
+      self._hooks_handlers.append(handler)
       handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ,
                                   self._hook_mem_read)
       self._hooks_handlers.append(handler)
@@ -224,18 +222,6 @@ class Emu(abc.ABC):
                   '\t\t\t\t\t\t>>> Code hook %s size %d SP %s',
                   self._format_addr_str(paddr, vaddr), size,
                   self._format_addr_str(self.get_stack_address()))
-    try:
-      perm = self._mem_region_access[paddr]
-      if not perm & memory.MemAccessPermissions.R:
-        self.exit_with_exception(
-            error.Error('{}: Unallowed memory FETCH access: {}'.format(
-                self._format_addr_str(self.get_current_address()),
-                self._format_addr_str(paddr, vaddr))))
-    except KeyError:
-      self.exit_with_exception(
-          error.Error('{}: Unmapped memory FETCH access: {}'.format(
-              self._format_addr_str(self.get_current_address()),
-              self._format_addr_str(paddr, vaddr))))
 
     if self._log_level <= logging.DEBUG:
       info = self._instruction_examination(paddr, vaddr, size)
@@ -283,19 +269,6 @@ class Emu(abc.ABC):
         self._format_addr_str(self.get_current_address()),
         self._format_addr_str(paddr, vaddr), size, value)
 
-    try:
-      perm = self._mem_region_access[paddr]
-      if not perm & memory.MemAccessPermissions.R:
-        self.exit_with_exception(
-            error.Error('{}: Unallowed memory READ access: {}'.format(
-                self._format_addr_str(self.get_current_address()),
-                self._format_addr_str(paddr, vaddr))))
-    except KeyError:
-      self.exit_with_exception(
-          error.Error('{}: READ unmapped memory: {}'.format(
-              self._format_addr_str(self.get_current_address()),
-              self._format_addr_str(paddr, vaddr))))
-
   # callback for tracing write memory
   def _hook_mem_write(self, uc: unicorn.Uc, access: int, vaddr: int, size: int,
                       value: int, udata, paddr: int):
@@ -318,19 +291,6 @@ class Emu(abc.ABC):
         self._format_addr_str(self.get_current_address()),
         self._format_addr_str(paddr, vaddr), size, value)
 
-    try:
-      perm = self._mem_region_access[paddr]
-      if not perm & memory.MemAccessPermissions.W:
-        self.exit_with_exception(
-            error.Error('{}: Unallowed memory WRITE access: {}'.format(
-                self._format_addr_str(self.get_current_address()),
-                self._format_addr_str(paddr, vaddr))))
-    except KeyError:
-      self.exit_with_exception(
-          error.Error('{}: WRITE unmapped memory: {}'.format(
-              self._format_addr_str(self.get_current_address()),
-              self._format_addr_str(paddr, vaddr))))
-
   # callback for tracing invalid instructions
   def _hook_insn_invalid(self, uc: unicorn.Uc, udata) -> bool:
     """Hook for illegal instruction.
@@ -351,9 +311,9 @@ class Emu(abc.ABC):
     self.dump_regs()
     return True
 
-  def _hook_invalid(self, uc: unicorn.Uc, access: int, vaddr: int, size: int,
-                    value: int, udata, paddr: int) -> bool:
-    """Hook for invalid access to memory.
+  def _hook_invalid_access(self, uc: unicorn.Uc, access: int, vaddr: int,
+                           size: int, value: int, udata, paddr: int) -> bool:
+    """Hook for invalid permission access to memory.
 
     Args:
       uc: [unused] Unicorn instance
@@ -370,29 +330,15 @@ class Emu(abc.ABC):
     """
 
     del uc, value, udata  # unused by the hook
-    ranges = self._mem_invalid_handlers[portion.closedopen(paddr,
-                                                           paddr + size)]
-    self._log.error('Invalid memory access %s at %s to %s',
-                    access, self._format_addr_str(self.get_current_address()),
-                    self._format_addr_str(paddr, vaddr))
-    if not ranges:
-      access = self.MemoryAccessType(access)
-      self.exit_with_exception(
-          error.Error(
-              '[MEM] Invalid memory access ({}) at {} to {}, size {}'.format(
-                  str(access),
-                  self._format_addr_str(self.get_current_address()),
-                  self._format_addr_str(paddr, vaddr), size)))
-      return True
-    if len(ranges) != 1:
-      self.exit_with_exception(
-          error.Error('[MEM] Invalid memory access: Wrong number of handlers '
-                      f'({len(ranges)}) for at '
-                      f'{self._format_addr_str(self.get_current_address())} '
-                      f'to {self._format_addr_str(paddr, vaddr)}, '
-                      f'size = 0x{size:x}'))
-      return True
-    return ranges.values()[0](self, access, paddr, size)
+    access = self.MemoryAccessType(access)
+    self.exit_with_exception(
+        error.Error(
+            '[MEM] Invalid permission memory access '
+            '({}) at {} to {}, size {}'.format(
+                str(access),
+                self._format_addr_str(self.get_current_address()),
+                self._format_addr_str(paddr, vaddr), size)))
+    return True
 
   def _hook_mem_unmapped(self, uc: unicorn.Uc, access: int, vaddr: int,
                          size: int, value: int, udata, paddr: int) -> bool:
@@ -470,6 +416,29 @@ class Emu(abc.ABC):
     if not ctx:
       raise error.Error('CPU context is not present')
     self._uc.context_restore(ctx)
+
+  def _convert_perm_to_uc_prot(self, perm):
+    """Converts permission flags to UC consts.
+
+    Args:
+      perm: memory.MemAccessPermissions flags
+
+    Returns:
+      Corresponding UC constants.
+    """
+
+    uc_conv_map = {
+        memory.MemAccessPermissions.R: unicorn_const.UC_PROT_READ,
+        memory.MemAccessPermissions.W: unicorn_const.UC_PROT_WRITE,
+        memory.MemAccessPermissions.E: unicorn_const.UC_PROT_EXEC,
+    }
+
+    uc_perm = unicorn_const.UC_PROT_NONE
+    for p, u in uc_conv_map.items():
+      if perm & p:
+        uc_perm |= u
+
+    return uc_perm
 
   @abc.abstractmethod
   def dump_regs(self) -> None:
@@ -619,6 +588,30 @@ class Emu(abc.ABC):
           del self._func_stack[0]
         self._log.debug(".exec. <= '%s'", func)
 
+  def _get_addr_and_size_from_interval(self, interval):
+    """Returns address and size from Interval.
+
+    Args:
+      interval: portion.Interval data
+
+    Returns:
+      Address and size extracted from portion.Interval
+
+    Raises:
+      ValueError in case of error.
+    """
+    if not isinstance(interval, portion.interval.Interval):
+      raise ValueError()
+    if interval.empty:
+      raise ValueError()
+    addr = interval.lower
+    if interval.left == portion.OPEN:
+      addr += 1
+    size = interval.upper - addr
+    if interval.right == portion.CLOSED:
+      size += 1
+    return addr, size
+
   @abc.abstractmethod
   def set_return_code(self, ret: int) -> None:
     raise NotImplementedError()
@@ -719,29 +712,35 @@ class Emu(abc.ABC):
     self._log.debug('Map region (fixed): 0x%x - 0x%x', addr_fixed,
                     addr_fixed + size_fixed - 1)
 
-    res = (portion.closedopen(addr_fixed, addr_fixed + size_fixed)
-           - self._mem_mapped_regions)
+    intervals = (portion.closedopen(addr_fixed, addr_fixed + size_fixed)
+                 - self._mem_mapped_regions)
 
-    for i in res:
-      if i.empty:
+    for interval in intervals:
+      try:
+        sub_addr, sub_size = self._get_addr_and_size_from_interval(interval)
+      except ValueError:
         continue
-      if not isinstance(i, portion.interval.Interval):
-        continue
-      a = i.lower
-      if i.left == portion.OPEN:
-        a += 1
-      s = i.upper - a
-      if i.right == portion.CLOSED:
-        s += 1
-      self._log.debug('Map region (left): 0x%x - 0x%x', a, a+s)
-      if s:
-        self._uc.mem_map(a, s)
+      self._log.debug('Map sub region: 0x%x - 0x%x',
+                      sub_addr, sub_addr + sub_size - 1)
+      if sub_size:
+        self._uc.mem_map(sub_addr, sub_size, unicorn_const.UC_PROT_NONE)
 
-    self._mem_mapped_regions |= res
-    chunk = portion.IntervalDict({portion.closedopen(addr, addr + size): perm})
+    self._mem_mapped_regions |= intervals
+
+    new_interval = portion.closedopen(addr, addr + size)
+    chunk = portion.IntervalDict({new_interval: perm})
     combine_perm = lambda orig, new: orig | new
     self._mem_region_access = self._mem_region_access.combine(chunk,
                                                               how=combine_perm)
+    for interval, sub_perm in self._mem_region_access.get(new_interval).items():
+      uc_perm = self._convert_perm_to_uc_prot(sub_perm)
+      try:
+        sub_addr, sub_size = self._get_addr_and_size_from_interval(interval)
+      except ValueError:
+        continue
+      self._log.debug('Set permision to sub egion: 0x%x - 0x%x: %s',
+                      sub_addr, sub_addr + sub_size - 1, sub_perm)
+      self._uc.mem_protect(sub_addr, sub_size, uc_perm)
 
   def load_to_mem(self, name: str, addr: int, data: bytes,
                   perm: memory.MemAccessPermissions) -> None:
@@ -830,14 +829,6 @@ class Emu(abc.ABC):
       raise error.Error('Range overlapping is not supported for MEM unmapped '
                         'callbacks')
     self._mem_unmapped_handlers[portion.closedopen(start, end)] = func
-
-  def add_mem_invalid_callback(self, func, start, end):
-    self._log.debug('Add mem unmapped handler: 0x%x-0x%x', start, end)
-    ranges = self._mem_invalid_handlers[portion.closedopen(start, end)]
-    if ranges:
-      raise error.Error('Range overlapping is not supported for MEM invalid '
-                        'callbacks')
-    self._mem_invalid_handlers[portion.closedopen(start, end)] = func
 
   # External API
   # ===============================================================
