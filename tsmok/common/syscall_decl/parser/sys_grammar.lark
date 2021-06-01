@@ -1,0 +1,24 @@
+start: syscall+
+syscall: syscallname syscallnumber arglist type
+syscallname: ESCAPED_STRING
+syscallnumber: NUMBER
+arglist: "(" [arg ["," arg]*] ")"
+arg: argname type
+argname: ESCAPED_STRING
+type: typename [ type_options ]
+typename: | "int32" -> int32
+          | "int64" -> int64
+          | "int32_ptr" -> int32_ptr
+          | "int64_ptr" -> int64_ptr
+          | "void_ptr" -> void_ptr
+          | "void" -> void
+type_options: "[" [type_opt ["," type_opt]+] "]"
+type_opt: "__in_res__" -> in_res
+          | "__out_res__" -> out_res
+          | "__in__" -> _in_
+          | "__out__" -> _out_
+
+%import common.ESCAPED_STRING
+%import common.NUMBER
+%import common.WS
+%ignore WS
