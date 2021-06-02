@@ -7,7 +7,7 @@ import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
 import tsmok.optee.error as optee_error
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 class HelloWorldTa:
@@ -73,7 +73,7 @@ class HelloWorldTa:
 
     cmd = int(self.Cmd.INCREMENT)
     params = [
-        ta_param.OpteeTaParamValueInOut(),
+        utee_args.OpteeUteeParamValueInOut(),
     ]
     params[0].a = value
     ret, params = self.ta.invoke_command(self.session, cmd, params)
@@ -101,7 +101,7 @@ class HelloWorldTa:
 
     cmd = int(self.Cmd.DECREMENT)
     params = [
-        ta_param.OpteeTaParamValueInOut(),
+        utee_args.OpteeUteeParamValueInOut(),
     ]
     params[0].a = value
     ret, params = self.ta.invoke_command(self.session, cmd, params)

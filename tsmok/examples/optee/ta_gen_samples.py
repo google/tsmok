@@ -7,7 +7,7 @@ import sys
 
 import tsmok.fuzzing.parser.optee_ta as ta_parser
 import tsmok.optee.syscalls as optee_syscalls
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 SAMPLE_BASE_NAME = 'sample-{}.bin'
 
@@ -77,14 +77,14 @@ def gen_samples(dir_path, syscalls):
     f.write(out)
   sample_id += 1
 
-  out += bytes(invoke_command(1, [ta_param.OpteeTaParamValueInOut(1, 0)], 0))
+  out += bytes(invoke_command(1, [utee_args.OpteeUteeParamValueInOut(1, 0)], 0))
 
   with open(dir_path + SAMPLE_BASE_NAME.format(sample_id), 'bw') as f:
     f.write(out)
   sample_id += 1
 
   out = bytes(open_session(1, []))
-  out += bytes(invoke_command(1, [ta_param.OpteeTaParamValueInOut(1, 0)], 1))
+  out += bytes(invoke_command(1, [utee_args.OpteeUteeParamValueInOut(1, 0)], 1))
   with open(dir_path + SAMPLE_BASE_NAME.format(sample_id), 'bw') as f:
     f.write(out)
   sample_id += 1

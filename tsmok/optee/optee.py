@@ -13,8 +13,7 @@ import tsmok.optee.property as optee_property
 import tsmok.optee.storage as optee_storage
 import tsmok.optee.syscalls as syscalls
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.ta_param as ta_param
-import tsmok.optee.utee_attr as utee_attr
+import tsmok.optee.utee_args as utee_args
 
 
 class Optee:
@@ -235,7 +234,7 @@ class Optee:
      args: argument list should have at least 5 elements:
            [0]: address to TEE_UUID structure
            [1]: 'cancel request to' parameter
-           [2]: pointer to OpteeTaParam list
+           [2]: pointer to OpteeUteeParam list
            [3]: pointer to store TA session
            [4]: pointer to store return code
 
@@ -259,13 +258,13 @@ class Optee:
       self.log.info('Found external TA: %s', target_ta.get_name())
 
       sid = self.gen_sid()
-      param_arg = ta_param.OpteeTaParamArgs()
+      param_arg = utee_args.OpteeUteeParamArgs()
       param_arg.load_from_mem(ta.mem_read, args[2])
 
       ret, params = target_ta.open_session(sid, param_arg.params)
       if ret == optee_error.OpteeErrorCode.SUCCESS:
         self.open_sessions[sid] = target_ta
-        param_args = ta_param.OpteeTaParamArgs(params)
+        param_args = utee_args.OpteeUteeParamArgs(params)
         param_args.load_to_mem(ta.mem_write, args[2])
         ta.mem_write(args[3], struct.pack('I', sid))
       return ret
@@ -311,7 +310,7 @@ class Optee:
            [0]: session id
            [1]: 'cancel request to' parameter
            [2]: command id
-           [3]: pointer pointer to OpteeTaParam list
+           [3]: pointer pointer to OpteeUteeParam list
            [4]: pointer to store return code
 
     Returns:
@@ -326,12 +325,12 @@ class Optee:
     if args[0] in self.open_sessions:
       target_ta = self.open_sessions[args[0]]
       self.log.info('Found open session for TA: %s', target_ta.get_uuid())
-      param_arg = ta_param.OpteeTaParamArgs()
+      param_arg = utee_args.OpteeUteeParamArgs()
       param_arg.load_from_mem(ta.mem_read, args[3])
       ret, params = target_ta.invoke_command(args[0], args[2],
                                              param_arg.params)
       if ret == optee_error.OpteeErrorCode.SUCCESS:
-        param_args = ta_param.OpteeTaParamArgs(params)
+        param_args = utee_args.OpteeUteeParamArgs(params)
         param_args.load_to_mem(ta.mem_write, args[3])
       return ret
 
@@ -976,15 +975,15 @@ class Optee:
     if args[2] == 0:
       return optee_error.OpteeErrorCode.SUCCESS
 
-    attr_size = utee_attr.OpteeUteeAttribute.size()
+    attr_size = utee_args.OpteeUteeAttribute.size()
     total_size = attr_size * args[2]
     data = ta.mem_read(args[1], total_size)
 
     attrs = []
     off = 0
     for _ in range(args[2]):
-      attr = utee_attr.OpteeUteeAttribute.create(data[off:])
-      if isinstance(attr, utee_attr.OpteeUteeAttributeMemory):
+      attr = utee_args.OpteeUteeAttribute.create(data[off:])
+      if isinstance(attr, utee_args.OpteeUteeAttributeMemory):
         if attr.addr and attr.size:
           attr.data = ta.mem_read(attr.addr, attr.size)
       off += attr_size
@@ -1127,14 +1126,14 @@ class Optee:
 
     attrs = []
     if args[2]:
-      attr_size = utee_attr.OpteeUteeAttribute.size()
+      attr_size = utee_args.OpteeUteeAttribute.size()
       total_size = attr_size * args[2]
       data = ta.mem_read(args[1], total_size)
 
       off = 0
       for _ in range(args[2]):
-        attr = utee_attr.OpteeUteeAttribute.create(data[off:])
-        if isinstance(attr, utee_attr.OpteeUteeAttributeMemory):
+        attr = utee_args.OpteeUteeAttribute.create(data[off:])
+        if isinstance(attr, utee_args.OpteeUteeAttributeMemory):
           if attr.addr and attr.size:
             attr.data = ta.mem_read(attr.addr, attr.size)
         off += attr_size

@@ -3,8 +3,8 @@
 import tsmok.optee.syscall_parser as parser
 
 TA_SYSCALL_DECLARATIONS = """
-"open_session" 0 ("sid" int32 [ __out_res__ ], "param" optee_ta_param_ptr) void
-"invoke_command" 2 ("sid" int32 [ __in_res__ ], "param" optee_ta_param_ptr, "cmd" int32) void
+"open_session" 0 ("sid" int32 [ __out_res__ ], "param" optee_utee_param_ptr) void
+"invoke_command" 2 ("sid" int32 [ __in_res__ ], "param" optee_utee_param_ptr, "cmd" int32) void
 "close_session" 1 ("sid" int32 [ __in_res__ ]) void
 """
 

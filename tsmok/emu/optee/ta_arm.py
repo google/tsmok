@@ -14,7 +14,7 @@ import tsmok.optee.error as optee_error
 import tsmok.optee.image_ta as image_ta
 import tsmok.optee.syscalls as syscalls
 import tsmok.optee.ta.base as ta_base
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 class TaArmEmu(arm.ArmEmu, ta_base.Ta):
@@ -121,12 +121,12 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def open_session(
       self, sid: int,
-      params: List[ta_param.OpteeTaParam]
-      ) -> Tuple[optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]]:
+      params: List[utee_args.OpteeUteeParam]
+      ) -> Tuple[optee_error.OpteeErrorCode, List[utee_args.OpteeUteeParam]]:
     self._log.info('Open Session: id %d', sid)
 
     regs = []
-    param_arg = ta_param.OpteeTaParamArgs(params)
+    param_arg = utee_args.OpteeUteeParamArgs(params)
     addr = param_arg.load_to_mem(
         lambda a, d: self._load_args_to_mem(regs, a, d), None)
     ret = self.syscall(syscalls.OpteeTaCall.OPEN_SESSION, sid, addr, 0)
@@ -141,12 +141,12 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
   def invoke_command(
       self, sid: int, cmd: int,
-      params: List[ta_param.OpteeTaParam]
-      ) -> Tuple[optee_error.OpteeErrorCode, List[ta_param.OpteeTaParam]]:
+      params: List[utee_args.OpteeUteeParam]
+      ) -> Tuple[optee_error.OpteeErrorCode, List[utee_args.OpteeUteeParam]]:
     self._log.info('Invoke Command: id %d', sid)
 
     regs = []
-    param_arg = ta_param.OpteeTaParamArgs(params)
+    param_arg = utee_args.OpteeUteeParamArgs(params)
     addr = param_arg.load_to_mem(
         lambda a, d: self._load_args_to_mem(regs, a, d), None)
     self._log.info('Invoke command %s', cmd)

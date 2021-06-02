@@ -6,7 +6,7 @@ import lark
 import tsmok.common.error as error
 import tsmok.common.syscall_decl.parser.general as parser
 import tsmok.common.syscall_decl.syscall as syscall
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 ta_call_parser = lark.Lark(r"""
@@ -16,14 +16,14 @@ ta_call_parser = lark.Lark(r"""
 %import .sys_grammar (in_res, out_res, void_ptr, int32, int64, int32_ptr)
 %import .sys_grammar (int64_ptr, void, _in_, _out_, NUMBER)
 
-%extend typename: "optee_ta_param_ptr" -> ta_param_ptr
+%extend typename: "optee_utee_param_ptr" -> utee_param_ptr
 
 %import common.WS
 %ignore WS
 """, start='start', parser='lalr', import_paths=[parser.IMPORT_PATH])
 
 
-class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
+class UteeParamArg(syscall.Ptr, utee_args.OpteeUteeParamArgs):
   """OPTEE TA Param pointer type for parser."""
 
   HDR_FMT = '<H'
@@ -31,7 +31,7 @@ class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
 
   def __init__(self, params=None):
     syscall.Ptr.__init__(self, 0)
-    ta_param.OpteeTaParamArgs.__init__(self, params or [])
+    utee_args.OpteeUteeParamArgs.__init__(self, params or [])
 
   def arg(self):
     return syscall.Ptr.arg(self)
@@ -42,13 +42,13 @@ class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
   @classmethod
   def parse(cls, data):
     param_actions = {
-        ta_param.OpteeTaParamType.NONE: cls._setup_none_param,
-        ta_param.OpteeTaParamType.VALUE_INPUT: cls._setup_int_param,
-        ta_param.OpteeTaParamType.VALUE_OUTPUT: cls._setup_int_param,
-        ta_param.OpteeTaParamType.VALUE_INOUT: cls._setup_int_param,
-        ta_param.OpteeTaParamType.MEMREF_INPUT: cls._setup_buffer_param,
-        ta_param.OpteeTaParamType.MEMREF_OUTPUT: cls._setup_buffer_param,
-        ta_param.OpteeTaParamType.MEMREF_INOUT: cls._setup_buffer_param,
+        utee_args.OpteeUteeParamType.NONE: cls._setup_none_param,
+        utee_args.OpteeUteeParamType.VALUE_INPUT: cls._setup_int_param,
+        utee_args.OpteeUteeParamType.VALUE_OUTPUT: cls._setup_int_param,
+        utee_args.OpteeUteeParamType.VALUE_INOUT: cls._setup_int_param,
+        utee_args.OpteeUteeParamType.MEMREF_INPUT: cls._setup_buffer_param,
+        utee_args.OpteeUteeParamType.MEMREF_OUTPUT: cls._setup_buffer_param,
+        utee_args.OpteeUteeParamType.MEMREF_INOUT: cls._setup_buffer_param,
     }
 
     sz = struct.calcsize(cls.HDR_FMT)
@@ -64,15 +64,15 @@ class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
       off += idx
       args = data[off:].lstrip(cls.ARGDELIM).split(cls.ARGDELIM)
     params = []
-    for i in range(ta_param.OpteeTaParamArgs.NUM_PARAMS):
+    for i in range(utee_args.OpteeUteeParamArgs.NUM_PARAMS):
       try:
-        t = ta_param.OpteeTaParamType((ptypes >> (i * 4)) & 0x7)
+        t = utee_args.OpteeUteeParamType((ptypes >> (i * 4)) & 0x7)
       except ValueError:
         continue
 
-      param = ta_param.OpteeTaParam.get_type(t)()
+      param = utee_args.OpteeUteeParam.get_type(t)()
       params.append(param)
-      if isinstance(param, ta_param.OpteeTaParamNone) or not args:
+      if isinstance(param, utee_args.OpteeUteeParamNone) or not args:
         continue
 
       try:
@@ -84,10 +84,10 @@ class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
 
   @classmethod
   def _setup_int_param(cls, param, data):
-    sz = struct.calcsize(ta_param.OpteeTaParamValue.FMT)
+    sz = struct.calcsize(utee_args.OpteeUteeParamValue.FMT)
     if len(data) < sz:
       data += b'\x00' * (sz - len(data))
-    a, b = struct.unpack(ta_param.OpteeTaParamValue.FMT, data[:sz])
+    a, b = struct.unpack(utee_args.OpteeUteeParamValue.FMT, data[:sz])
     param.a = a
     param.b = b
     return sz
@@ -103,13 +103,14 @@ class TaParamArg(syscall.Ptr, ta_param.OpteeTaParamArgs):
     return 0
 
   def load_to_mem(self, loader):
-    self.addr = ta_param.OpteeTaParamArgs.load_to_mem(self, loader, self.addr)
+    self.addr = utee_args.OpteeUteeParamArgs.load_to_mem(self, loader,
+                                                         self.addr)
 
   def __bytes__(self):
     out = b''
     ptypes = 0
     for i, p in enumerate(self.params):
-      if not isinstance(p, ta_param.OpteeTaParamNone):
+      if not isinstance(p, utee_args.OpteeUteeParamNone):
         out += self.ARGDELIM + bytes(p)
       ptypes |= (int(p.type) & 0xf) << (i * 4)
     return struct.pack(self.HDR_FMT, ptypes) + out
@@ -127,8 +128,8 @@ class TaTransformer(parser.SyscallTransformer):
   def __init__(self):
     parser.SyscallTransformer.__init__(self)
 
-  def ta_param_ptr(self, *args):
-    return TaParamArg
+  def utee_param_ptr(self, *args):
+    return UteeParamArg
 
 
 def parse(data):

@@ -19,7 +19,7 @@ import tsmok.optee.message as message
 import tsmok.optee.rpmb as optee_rpmb
 import tsmok.optee.smc as optee_smc
 import tsmok.optee.syscalls as syscalls
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 SharedMemoryConfig = collections.namedtuple('SharedMemoryConfig',
@@ -198,18 +198,19 @@ class OpteeArmEmu(arm.ArmEmu):
                         'for now')
     return param
 
-  def _convert_from_ta_params(self, ta_params: List[ta_param.OpteeTaParam]
-                             ) -> List[message.OpteeMsgParam]:
+  def _convert_from_utee_params(self,
+                                utee_params: List[utee_args.OpteeUteeParam]
+                               ) -> List[message.OpteeMsgParam]:
     params = []
-    for param in ta_params:
+    for param in utee_params:
       params.append(param.convert_to_msg_param())
     return params
 
-  def _convert_to_ta_params(self, ta_params: List[ta_param.OpteeTaParam]
-                           ) -> List[message.OpteeMsgParam]:
+  def _convert_to_utee_params(self, utee_params: List[utee_args.OpteeUteeParam]
+                             ) -> List[message.OpteeMsgParam]:
     params = []
-    for param in ta_params:
-      params.append(param.convert_to_ta_param())
+    for param in utee_params:
+      params.append(param.convert_to_utee_param())
     return params
 
   def _rpc_cmd_load_ta(self, msg_arg):
@@ -582,10 +583,10 @@ class OpteeArmEmu(arm.ArmEmu):
     return SharedMemoryConfig(ret[1], ret[2], ret[3])
 
   def open_session(self, uid: uuid.UUID, login: message.OpteeMsgLoginType,
-                   ta_params: List[ta_param.OpteeTaParam]):
+                   utee_params: List[utee_args.OpteeUteeParam]):
     arg = message.OpteeMsgArg(message.OpteeMsgCmd.OPEN_SESSION)
 
-    params = self._convert_from_ta_params(ta_params)
+    params = self._convert_from_utee_params(utee_params)
 
     uuid_param = message.OpteeMsgParamValueInput()
     uuid_param.attr |= message.OPTEE_MSG_ATTR_META
@@ -628,15 +629,15 @@ class OpteeArmEmu(arm.ArmEmu):
       for param in arg.params:
         self._param_from_memory(param)
 
-    return arg.ret, arg.session, self._convert_to_ta_params(arg.params)
+    return arg.ret, arg.session, self._convert_to_utee_params(arg.params)
 
   def invoke_command(self, session: int, cmd: int,
-                     ta_params: List[ta_param.OpteeTaParam]):
+                     utee_params: List[utee_args.OpteeUteeParam]):
     arg = message.OpteeMsgArg(message.OpteeMsgCmd.INVOKE_COMMAND)
     arg.session = session
     arg.func = cmd
 
-    for param in self._convert_from_ta_params(ta_params):
+    for param in self._convert_from_utee_params(utee_params):
       arg.params.append(self._param_to_memory(param))
 
     reg = self._nsec_memory_pool.allocate(arg.size())
@@ -664,7 +665,7 @@ class OpteeArmEmu(arm.ArmEmu):
       for param in arg.params:
         self._param_from_memory(param)
 
-    return arg.ret, self._convert_to_ta_params(arg.params)
+    return arg.ret, self._convert_to_utee_params(arg.params)
 
   def close_session(self, session: int):
     arg = message.OpteeMsgArg(message.OpteeMsgCmd.CLOSE_SESSION)

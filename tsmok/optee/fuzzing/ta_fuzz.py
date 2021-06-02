@@ -9,7 +9,7 @@ import struct
 import tsmok.common.error as error
 import tsmok.common.ta_error as ta_error
 import tsmok.optee.error as optee_error
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 def convert_error_to_crash(exc):
@@ -52,13 +52,13 @@ class TaFuzzer:
     self._ta = ta
 
     self._param_actions = {
-        ta_param.OpteeTaParamType.NONE: self._setup_none_param,
-        ta_param.OpteeTaParamType.VALUE_INPUT: self._setup_int_param,
-        ta_param.OpteeTaParamType.VALUE_OUTPUT: self._setup_int_param,
-        ta_param.OpteeTaParamType.VALUE_INOUT: self._setup_int_param,
-        ta_param.OpteeTaParamType.MEMREF_INPUT: self._setup_buffer_param,
-        ta_param.OpteeTaParamType.MEMREF_OUTPUT: self._setup_buffer_param,
-        ta_param.OpteeTaParamType.MEMREF_INOUT: self._setup_buffer_param,
+        utee_args.OpteeUteeParamType.NONE: self._setup_none_param,
+        utee_args.OpteeUteeParamType.VALUE_INPUT: self._setup_int_param,
+        utee_args.OpteeUteeParamType.VALUE_OUTPUT: self._setup_int_param,
+        utee_args.OpteeUteeParamType.VALUE_INOUT: self._setup_int_param,
+        utee_args.OpteeUteeParamType.MEMREF_INPUT: self._setup_buffer_param,
+        utee_args.OpteeUteeParamType.MEMREF_OUTPUT: self._setup_buffer_param,
+        utee_args.OpteeUteeParamType.MEMREF_INOUT: self._setup_buffer_param,
     }
 
   def _setup_int_param(self, param, data):
@@ -132,12 +132,12 @@ class TaFuzzer:
 
     offset = sz
     param_list = []
-    for i in range(ta_param.OPTEE_NUM_PARAMS):
+    for i in range(utee_args.OPTEE_NUM_PARAMS):
       try:
-        t = ta_param.OpteeTaParamType((types >> (i * 4)) & 0x7)
+        t = utee_args.OpteeUteeParamType((types >> (i * 4)) & 0x7)
       except ValueError:
         continue
-      param = ta_param.OpteeTaParam.get_type(t)()
+      param = utee_args.OpteeUteeParam.get_type(t)()
       off = self._param_actions[t](param, data[offset:])
       offset += off
       param_list.append(param)

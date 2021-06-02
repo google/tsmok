@@ -7,11 +7,10 @@ import hmac
 import math
 import os
 import struct
-from typing import Dict, Any, List
+from typing import Dict, Any
 import tsmok.common.error as error
 import tsmok.optee.error as optee_error
 import tsmok.optee.storage as storage
-import tsmok.optee.utee_attr as utee_attr
 
 
 class OpteeCrypOperation(enum.IntEnum):
@@ -720,14 +719,12 @@ class CryptoModule:
 
     return obj.get_info()
 
-  def object_populate(self, oid: int,
-                      attrs: List[utee_attr.OpteeUteeAttribute]
-                     ) -> optee_error.OpteeErrorCode:
+  def object_populate(self, oid: int, attrs) -> optee_error.OpteeErrorCode:
     """Populates an object with attributes.
 
     Args:
       oid: the object id to be populated.
-      attrs: the list of utee_attr.OpteeUteeAttribute attributes
+      attrs: the list of utee_args.OpteeUteeAttribute attributes
              to be populate into the object.
 
     Returns:
@@ -813,7 +810,7 @@ class CryptoModule:
 
     Args:
       cid: the context id
-      params: the list of utee_attr.OpteeUteeAttribute parameters
+      params: the list of utee_args.OpteeUteeAttribute parameters
              to be used for a key deriving.
       derived_key: the object id for storing the derived key
 

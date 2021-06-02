@@ -4,7 +4,7 @@ import enum
 import struct
 
 import tsmok.common.error as error
-import tsmok.optee.ta_param as ta_param
+import tsmok.optee.utee_args as utee_args
 
 
 class OpteeMsgCmd(enum.IntEnum):
@@ -211,30 +211,30 @@ class OpteeMsgParam:
     param_type = type_map[attr]
     return param_type(a, b, c)
 
-  def convert_to_ta_param(self):
-    """Converts OpteeMsgParam to OpteeTaParam.
+  def convert_to_utee_param(self):
+    """Converts OpteeMsgParam to OpteeUteeParam.
 
     Returns:
-      Converted OpteeTaParam object
+      Converted OpteeUteeParam object
 
     Raises:
       Error exception in case of error.
     """
     type_map = {
-        OpteeMsgAttrType.NONE: ta_param.OpteeTaParamNone,
-        OpteeMsgAttrType.VALUE_INPUT: ta_param.OpteeTaParamValueInput,
-        OpteeMsgAttrType.VALUE_OUTPUT: ta_param.OpteeTaParamValueOutput,
-        OpteeMsgAttrType.VALUE_INOUT: ta_param.OpteeTaParamValueInOut,
-        OpteeMsgAttrType.TMEM_INPUT: ta_param.OpteeTaParamMemrefInput,
-        OpteeMsgAttrType.TMEM_OUTPUT: ta_param.OpteeTaParamMemrefOutput,
-        OpteeMsgAttrType.TMEM_INOUT: ta_param.OpteeTaParamMemrefInOut,
+        OpteeMsgAttrType.NONE: utee_args.OpteeUteeParamNone,
+        OpteeMsgAttrType.VALUE_INPUT: utee_args.OpteeUteeParamValueInput,
+        OpteeMsgAttrType.VALUE_OUTPUT: utee_args.OpteeUteeParamValueOutput,
+        OpteeMsgAttrType.VALUE_INOUT: utee_args.OpteeUteeParamValueInOut,
+        OpteeMsgAttrType.TMEM_INPUT: utee_args.OpteeUteeParamMemrefInput,
+        OpteeMsgAttrType.TMEM_OUTPUT: utee_args.OpteeUteeParamMemrefOutput,
+        OpteeMsgAttrType.TMEM_INOUT: utee_args.OpteeUteeParamMemrefInOut,
     }
 
     try:
       param = type_map[self.attr]()
     except ValueError:
       raise error.Error(f'Can not convert Optee Msg type {self.attr} '
-                        'to OpteeTaParam')
+                        'to OpteeUteeParam')
 
     if isinstance(self, OpteeMsgParamValue):
       param.a = self.a
