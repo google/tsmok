@@ -975,7 +975,7 @@ class Optee:
     if args[2] == 0:
       return optee_error.OpteeErrorCode.SUCCESS
 
-    attr_size = utee_args.OpteeUteeAttribute.size()
+    attr_size = utee_args.OpteeUteeAttribute._size()
     total_size = attr_size * args[2]
     data = ta.mem_read(args[1], total_size)
 
@@ -1126,7 +1126,7 @@ class Optee:
 
     attrs = []
     if args[2]:
-      attr_size = utee_args.OpteeUteeAttribute.size()
+      attr_size = utee_args.OpteeUteeAttribute._size()
       total_size = attr_size * args[2]
       data = ta.mem_read(args[1], total_size)
 

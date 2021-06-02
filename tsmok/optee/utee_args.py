@@ -308,13 +308,15 @@ OPTEE_ATTR_BIT_VALUE = 1 << 29
 class OpteeUteeAttribute:
   """Defines OPTEE Utee Attribute base class."""
 
-  FORMAT = '<2Q2I'
+  TYPE_FMT = 'I'
+  BODY_FMT = '2Q'
+  FORMAT = '<' + BODY_FMT + TYPE_FMT + 'I'  # 32bit padding
 
   def __init__(self):
     self.atype = 0
 
   @staticmethod
-  def size():
+  def size_():
     return struct.calcsize(OpteeUteeAttribute.FORMAT)
 
   @staticmethod
@@ -331,22 +333,75 @@ class OpteeUteeAttribute:
       ValueError exception is raised if size of data is not enough for parsing.
     """
 
-    sz = struct.calcsize(OpteeUteeAttribute.FORMAT)
+    sz = OpteeUteeAttribute.size_()
 
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
     a, b, atype, _ = struct.unpack(OpteeUteeAttribute.FORMAT, data[:sz])
     if atype & OPTEE_ATTR_BIT_VALUE:
-      attr = OpteeUteeAttributeValue()
-      attr.a = a
-      attr.b = b
+      attr = OpteeUteeAttributeValue(atype, a, b)
     else:
-      attr = OpteeUteeAttributeMemory()
-      attr.addr = a
-      attr.size = b
+      attr = OpteeUteeAttributeMemory(atype, addr=a, size=b)
 
-    attr.atype = crypto.OpteeAttr(atype)
+    return attr
+
+  def load_to_mem(self, loader, addr):
+    """Loads the Optee attribute to memery.
+
+    Args:
+      loader: a function to load parameters data to Emu memory.
+      addr: the address to load data. If NULL, the `loader` function should
+            allocate the address.
+
+    Returns:
+      Address where parameters was loaded.
+
+    Raises:
+      ValueError, if wrong parameters were specified.
+    """
+    if not callable(loader):
+      raise ValueError('loader argument is not a function')
+
+    values = []
+    if isinstance(self, OpteeUteeAttributeMemory):
+      data = self.data
+      if self.size and not data:
+        data = b'\x00' * self.size
+      if data:
+        self.addr = loader(self.addr, data)
+        if not self.size:
+          self.size = len(data)
+    values += self.values()
+
+    data = struct.pack(self.FORMAT, self.atype, *values, 0)
+    return loader(addr, data)
+
+  @staticmethod
+  def create_from_mem(loader, addr):
+    """Load OPTEE UTEE attribute from memory.
+
+    Args:
+      loader: a function to load parameters data from Emu memory.
+      addr: the address to load data from.
+
+    Returns:
+      None
+
+    Raises:
+      ValueError, if wrong parameters were specified.
+    """
+
+    if not callable(loader):
+      raise ValueError('loader argument is not a function')
+
+    data = loader(addr, OpteeUteeAttribute.size())
+
+    attr = OpteeUteeAttribute.create(data)
+
+    if isinstance(addr, OpteeUteeAttributeMemory):
+      if attr.addr != 0 and attr.size != 0:
+        attr.data = loader(attr.addr, attr.size)
 
     return attr
 
@@ -354,16 +409,11 @@ class OpteeUteeAttribute:
 class OpteeUteeAttributeValue(OpteeUteeAttribute):
   """Defines OPTEE Utee Attribute Value class."""
 
-  def __init__(self, data=None):
+  def __init__(self, atype, a=0, b=0):
     OpteeUteeAttribute.__init__(self)
-    if data:
-      if isinstance(data, bytes):
-        self.load(data)
-      else:
-        raise ValueError('Wrong type of data')
-    else:
-      self.a = 0
-      self.b = 0
+    self.a = a
+    self.b = b
+    self.atype = crypto.OpteeAttr(atype)
 
   def load(self, data):
     """Loads OpteeUteeAttributeValue object from raw data.
@@ -382,7 +432,7 @@ class OpteeUteeAttributeValue(OpteeUteeAttribute):
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
-    self.a, self.b, atype = struct.unpack(self.FORMAT, data[:sz])
+    self.a, self.b, atype, _ = struct.unpack(self.FORMAT, data[:sz])
     if not atype & OPTEE_ATTR_BIT_VALUE:
       raise ValueError('Parsed attribute is not VALUE one')
 
@@ -397,21 +447,20 @@ class OpteeUteeAttributeValue(OpteeUteeAttribute):
 
     return out
 
+  def __bytes__(self):
+    return struct.pack(self.TYPE_FMT + self.BODY_FMT,
+                       self.atype, self.a, self.b)
+
 
 class OpteeUteeAttributeMemory(OpteeUteeAttribute):
   """Defines OPTEE Utee Attribute Memory reference class."""
 
-  def __init__(self, data=None):
+  def __init__(self, atype, data=None, addr=0, size=0):
     OpteeUteeAttribute.__init__(self)
-    if data:
-      if isinstance(data, bytes):
-        self.load(data)
-      else:
-        raise ValueError('Wrong type of data')
-    else:
-      self.addr = 0
-      self.size = 0
-      self.data = None
+    self.addr = addr
+    self.size = size
+    self.data = data
+    self.atype = crypto.OpteeAttr(atype)
 
   def load(self, data):
     """Loads OpteeUteeAttributeMemory object from raw data.
@@ -430,7 +479,7 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
-    self.addr, self.size, atype = struct.unpack(self.FORMAT, data[:sz])
+    self.addr, self.size, atype, _ = struct.unpack(self.FORMAT, data[:sz])
     if atype & OPTEE_ATTR_BIT_VALUE:
       raise ValueError('Parsed attribute is VALUE one, not Memory')
 
@@ -446,3 +495,5 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
 
     return out
 
+  def __bytes__(self):
+    return struct.pack(self.TYPE_FMT, self.atype) + self.data
