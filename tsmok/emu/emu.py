@@ -137,7 +137,7 @@ class Emu(abc.ABC):
                                 self._hook_interrupt)
     self._hooks_handlers.append(handler)
 
-    if self._log_level <= logging.INFO:
+    if self._log_level < logging.INFO:
       handler = self._uc.hook_add(unicorn_const.UC_HOOK_MEM_READ_AFTER,
                                   self._hook_mem_read_after)
       self._hooks_handlers.append(handler)
@@ -738,7 +738,7 @@ class Emu(abc.ABC):
         sub_addr, sub_size = self._get_addr_and_size_from_interval(interval)
       except ValueError:
         continue
-      self._log.debug('Set permision to sub egion: 0x%x - 0x%x: %s',
+      self._log.debug('Set permision to sub region: 0x%x - 0x%x: %s',
                       sub_addr, sub_addr + sub_size - 1, sub_perm)
       self._uc.mem_protect(sub_addr, sub_size, uc_perm)
 
