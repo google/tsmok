@@ -5,6 +5,15 @@ import enum
 import struct
 
 
+class ArgFlags(enum.IntEnum):
+  IN = 0
+  OUT = 1
+  RES_IN = 2
+  RES_OUT = 3
+  ARRAY = 4
+  ARRAY_LEN = 5
+
+
 class ArgTypeInfo:
   """Syscall argument type information."""
 
@@ -50,11 +59,64 @@ class Syscall:
       if isinstance(a, Ptr):
         a.load_to_mem(loader)
 
+  def load_args_from_mem(self, loader):
+    if not callable(loader):
+      raise ValueError('loader argument is not a function')
+    for a in self._args:
+      if isinstance(a, Ptr):
+        a.load_from_mem(loader)
+
   def number(self):
     return self.NR
 
   def args(self):
     return [a.arg() for a in self._args]
+
+  def args_resources_out(self):
+    for a in  self._args:
+      if ArgFlags.RES_OUT in a.options:
+        yield (a.name, a.value())
+
+  @classmethod
+  def parse_args_data(cls, data):
+    """Splits input data to list of chunks for futher parsing by args.
+
+    Args:
+      data: raw binary data.
+
+    Returns:
+      List of data chunks for futher parsing by args.
+
+    Raises:
+      ValueError/TypeError exception in case of error.
+    """
+    if not data:
+      raise ValueError('Not enough data to parse')
+
+    try:
+      # skip magic if it present
+      off = 0
+      if data[off:off + 2] == cls.CALLDELIM:
+        off += 2
+
+      number = struct.unpack(cls.CALL_FMT, data[off:off + 1])[0]
+      if cls.NR != number:
+        raise TypeError('Wrong Syscall data')
+      off += 1
+
+      return list(filter(None, data[off:].split(cls.ARGDELIM)))
+    except struct.error:
+      raise ValueError('Not enough data to parse')
+
+  @classmethod
+  def parse_arg_n_value(cls, idx, arg_data):
+    val, _ = cls.ARGS_INFO[idx].atype.parse(arg_data)
+    return val
+
+  @classmethod
+  def parse_arg_value(cls, arg, arg_data):
+    val, _ = arg.atype.parse(arg_data)
+    return val
 
   @classmethod
   def create(cls, data):
@@ -67,7 +129,7 @@ class Syscall:
       None
 
     Raises:
-    ValueError/TypeError exception in case of error.
+      ValueError/TypeError exception in case of error.
     """
 
     if not data:
@@ -97,10 +159,6 @@ class Syscall:
         break
 
     return cls(*values)
-
-  def reset_args(self):
-    for a in self._args:
-      a.reset()
 
   @staticmethod
   def parse_call_number(data):
@@ -158,9 +216,9 @@ class Arg(abc.ABC):
   def parse(cls, data):
     raise NotImplementedError()
 
+  @abc.abstractmethod
   def reset(self):
-    # do nothing
-    pass
+    raise NotImplementedError()
 
 
 class Ptr(Arg):
@@ -179,9 +237,9 @@ class Ptr(Arg):
       raise ValueError('loader argument is not a function')
     self.addr = loader(self.addr, bytes(self))
 
-  def reset(self):
-    self.addr = 0
-    self.data = None
+  @abc.abstractmethod
+  def load_from_mem(self, loader):
+    raise NotImplementedError
 
   def __str__(self):
     out = super().__str__()
@@ -253,25 +311,44 @@ class Void(Arg):
 class VoidPtr(Ptr):
   """'VOID *' argument for syscall."""
 
-  def __init__(self, data=b''):
+  def __init__(self, data=None):
     super().__init__(0)
-    self.data = data
+    self._data = data or b''
+    self._size = len(data)
 
   def arg(self):
-    return self.data
+    return self._data
+
+  def value(self):
+    return self._data
+
+  def __len__(self):
+    return len(self._data)
 
   @classmethod
   def parse(cls, data):
     return data, len(data)
 
+  def reset(self):
+    self._addr = 0
+    self._data = None
+    self._size = 0
+
   def __bytes__(self):
-    return self.data
+    return self._data
+
+  def set_size(self, size):
+    self._size = size
 
   def __str__(self):
     out = 'Void * ' + super().__str__()
-    if self.data:
-      out += f' Data {self.data[:8].hex()}... '
+    if self._data:
+      out += f' Data {self._data[:8].hex()}... '
     return out
+
+  def load_from_mem(self, loader):
+    if self._size and self.addr:
+      self._data = loader(self.addr, self._size)
 
 
 class Int32(Int):
@@ -325,6 +402,11 @@ class Int32Ptr(Ptr, Int32):
       out += f' at 0x{self.addr:x}'
     return out
 
+  def load_from_mem(self, loader):
+    if self.addr:
+      data = loader(self.addr, struct.calcsize(self.FMT))
+      self.val = struct.unpack(self.FMT, data)(0)
+
 
 class Int64Ptr(Ptr, Int64):
   """'INT64 *' argument for syscall."""
@@ -353,9 +435,8 @@ class Int64Ptr(Ptr, Int64):
       out += f' at 0x{self.addr:x}'
     return out
 
+  def load_from_mem(self, loader):
+    if self.addr:
+      data = loader(self.addr, struct.calcsize(self.FMT))
+      self.val = struct.unpack(self.FMT, data)(0)
 
-class ArgFlags(enum.IntEnum):
-  IN = 0
-  OUT = 1
-  IN_RES = 2
-  OUT_RES = 3

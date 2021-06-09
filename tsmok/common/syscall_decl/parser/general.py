@@ -82,16 +82,22 @@ class SyscallTransformer(lark.Transformer):
     return syscall.VoidPtr
 
   def in_res(self, *args):
-    return syscall.ArgFlags.IN_RES
+    return syscall.ArgFlags.RES_IN
 
   def out_res(self, *args):
-    return syscall.ArgFlags.OUT_RES
+    return syscall.ArgFlags.RES_OUT
 
   def _in_(self, *args):
     return syscall.ArgFlags.IN
 
   def _out_(self, *args):
     return syscall.ArgFlags.OUT
+
+  def array(self, *args):
+    return syscall.ArgFlags.ARRAY
+
+  def array_len(self, *args):
+    return syscall.ArgFlags.ARRAY_LEN
 
 
 def parse(data):

@@ -17,6 +17,8 @@ type_opt: "__in_res__" -> in_res
           | "__out_res__" -> out_res
           | "__in__" -> _in_
           | "__out__" -> _out_
+          | "__array__" -> array
+          | "__array_len__" -> array_len
 
 %import common.ESCAPED_STRING
 %import common.NUMBER
