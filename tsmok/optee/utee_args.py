@@ -5,7 +5,6 @@ import enum
 import struct
 
 import tsmok.common.error as error
-import tsmok.optee.crypto as crypto
 import tsmok.optee.message as message
 
 
@@ -315,13 +314,17 @@ class OpteeUteeAttribute:
   def __init__(self):
     self.atype = 0
 
+  @abc.abstractmethod
+  def values(self):
+    raise NotImplementedError()
+
   @staticmethod
   def size_():
     return struct.calcsize(OpteeUteeAttribute.FORMAT)
 
   @staticmethod
   def create(data):
-    """Creates OpteeUteeAttribute derived object based on parsing raw data.
+    """Creates OpteeUteeAttribute derived object from raw data from mem.
 
     Args:
       data: raw binary data
@@ -363,7 +366,6 @@ class OpteeUteeAttribute:
     if not callable(loader):
       raise ValueError('loader argument is not a function')
 
-    values = []
     if isinstance(self, OpteeUteeAttributeMemory):
       data = self.data
       if self.size and not data:
@@ -372,9 +374,9 @@ class OpteeUteeAttribute:
         self.addr = loader(self.addr, data)
         if not self.size:
           self.size = len(data)
-    values += self.values()
+    values = self.values()
 
-    data = struct.pack(self.FORMAT, self.atype, *values, 0)
+    data = struct.pack(self.FORMAT, *values, 0)
     return loader(addr, data)
 
   @staticmethod
@@ -395,11 +397,11 @@ class OpteeUteeAttribute:
     if not callable(loader):
       raise ValueError('loader argument is not a function')
 
-    data = loader(addr, OpteeUteeAttribute.size())
+    data = loader(addr, OpteeUteeAttribute.size_())
 
     attr = OpteeUteeAttribute.create(data)
 
-    if isinstance(addr, OpteeUteeAttributeMemory):
+    if isinstance(attr, OpteeUteeAttributeMemory):
       if attr.addr != 0 and attr.size != 0:
         attr.data = loader(attr.addr, attr.size)
 
@@ -411,9 +413,15 @@ class OpteeUteeAttributeValue(OpteeUteeAttribute):
 
   def __init__(self, atype, a=0, b=0):
     OpteeUteeAttribute.__init__(self)
+    if not atype & OPTEE_ATTR_BIT_VALUE:
+      raise ValueError('Wrong Attribute type')
+
     self.a = a
     self.b = b
-    self.atype = crypto.OpteeAttr(atype)
+    self.atype = atype
+
+  def values(self):
+    return [self.a, self.b, self.atype]
 
   def load(self, data):
     """Loads OpteeUteeAttributeValue object from raw data.
@@ -432,24 +440,19 @@ class OpteeUteeAttributeValue(OpteeUteeAttribute):
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
-    self.a, self.b, atype, _ = struct.unpack(self.FORMAT, data[:sz])
-    if not atype & OPTEE_ATTR_BIT_VALUE:
+    self.a, self.b, self.atype, _ = struct.unpack(self.FORMAT, data[:sz])
+    if not self.atype & OPTEE_ATTR_BIT_VALUE:
       raise ValueError('Parsed attribute is not VALUE one')
 
-    self.atype = crypto.OpteeAttr(atype)
     return sz
 
   def __str__(self):
     out = 'OpteeUteeAttributeValue:\n'
+    out += f'\ttype: 0x{self.atype:x}\n'
     out += f'\ta: {self.a}\n'
     out += f'\tb: {self.b}\n'
-    out += f'\ttype: {str(self.atype)}\n'
 
     return out
-
-  def __bytes__(self):
-    return struct.pack(self.TYPE_FMT + self.BODY_FMT,
-                       self.atype, self.a, self.b)
 
 
 class OpteeUteeAttributeMemory(OpteeUteeAttribute):
@@ -457,10 +460,16 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
 
   def __init__(self, atype, data=None, addr=0, size=0):
     OpteeUteeAttribute.__init__(self)
+    if atype & OPTEE_ATTR_BIT_VALUE:
+      raise ValueError('Wrong Attribute type')
+
     self.addr = addr
     self.size = size
     self.data = data
-    self.atype = crypto.OpteeAttr(atype)
+    self.atype = atype
+
+  def values(self):
+    return [self.addr, self.size, self.atype]
 
   def load(self, data):
     """Loads OpteeUteeAttributeMemory object from raw data.
@@ -479,21 +488,18 @@ class OpteeUteeAttributeMemory(OpteeUteeAttribute):
     if len(data) < sz:
       raise ValueError(f'Not enough data: {len(data)} < {sz}')
 
-    self.addr, self.size, atype, _ = struct.unpack(self.FORMAT, data[:sz])
-    if atype & OPTEE_ATTR_BIT_VALUE:
+    self.addr, self.size, self.atype, _ = struct.unpack(self.FORMAT, data[:sz])
+    if self.atype & OPTEE_ATTR_BIT_VALUE:
       raise ValueError('Parsed attribute is VALUE one, not Memory')
 
-    self.atype = crypto.OpteeAttr(atype)
     return sz
 
   def __str__(self):
-    out = 'OpteeUteeAttributeValue:\n'
+    out = 'OpteeUteeAttributeMemory:\n'
+    out += f'\ttype: 0x{self.atype:x}\n'
     out += f'\tptr:  0x{self.addr:08x}\n'
     out += f'\tsize: {self.size}\n'
-    out += f'\ttype: {str(self.atype)}\n'
     out += f'\tdata: {str(self.data)}\n'
 
     return out
 
-  def __bytes__(self):
-    return struct.pack(self.TYPE_FMT, self.atype) + self.data
