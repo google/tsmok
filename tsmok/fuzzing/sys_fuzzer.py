@@ -1,5 +1,7 @@
 """OPTEE TA fuzzing."""
 
+import collections
+import enum
 import logging
 
 import tsmok.common.syscall_decl.syscall as syscall
@@ -7,14 +9,28 @@ import tsmok.common.ta_error as ta_error
 import tsmok.optee.error as optee_error
 
 
+class Feature(enum.IntFlag):
+  NONE = 0
+  RESOURCE_SMART = 1<<0
+  ARRAY_SMART = 1<<1
+
+
+OpsCtx = collections.namedtuple(
+    'CallbackCtx', ['init', 'syscall', 'stop', 'loader_to_mem',
+                    'loader_from_mem', 'cleanup'])
+
+
 class SysFuzzer:
   """AFLPlusPlus compatible Syscall fuzzer wrapper."""
 
-  def __init__(self, emu, syscalls=None, log_level=logging.INFO):
-    self.log = logging.getLogger('[TaFuzzer]')
+  def __init__(self, ops: OpsCtx, syscalls=None, features=Feature.NONE,
+               log_level=logging.INFO):
+    self.log = logging.getLogger('[SysFuzzer]')
     self.log.setLevel(log_level)
-    self._emu = emu
+    self._features = features
     self._syscalls = syscalls or dict()
+    self._resources = dict()
+    self._ops = ops
 
   def init(self):
     """Starts AFL forkserver.
@@ -30,17 +46,50 @@ class SysFuzzer:
     Raises:
       Error exception in case of unknown or unsupported mode.
     """
-    return self._emu.forkserver_start()
+    return self._ops.init()
 
-  def load_args_to_mem(self, regs, addr, data):
-    to_addr = addr
-    if not to_addr:
-      reg = self._emu.allocate_shm_region(len(data))
-      to_addr = reg.addr
-      if regs:
-        regs.append(reg)
-    self._emu.mem_write(to_addr, data)
-    return to_addr
+  def _create_syscall(self, cls, data):
+    """Creates Syscall object and fill arguments from raw data.
+
+    Args:
+     cls: Syscall class
+     data: Raw data to fill arguments
+
+    Returns:
+      Syscall object instance.
+    """
+    values = []
+    args_data = cls.parse_args_data(data)
+    arrays = dict()
+    for info in cls.ARGS_INFO:
+      if self._features == Feature.RESOURCE_SMART:
+        if syscall.ArgFlags.RES_IN in info.options:
+          try:
+            val = self._resources[info.name]
+            values.append(val)
+            continue
+          except KeyError:
+            pass
+
+      if self._features == Feature.ARRAY_SMART:
+        if (syscall.ArgFlags.ARRAY_LEN in info.options and
+            info.name.endswith('_len')):
+          try:
+            val = self.arrays[info.name[:-len('_len')]]
+            values.append(len(val))
+            continue
+          except KeyError:
+            pass
+
+      try:
+        val = cls.parse_arg_value(info, args_data.pop(0))
+        values.append(val)
+        if syscall.ArgFlags.ARRAY in info.options:
+          arrays[info.name] = val
+      except (ValueError, IndexError):
+        # Not enough data for all args.
+        break
+    return cls(*values)
 
   def run(self, data: bytes):
     """Runs Ta emulation.
@@ -56,7 +105,6 @@ class SysFuzzer:
       Error exception in case of unexpected error.
     """
     args_data = data.split(syscall.Syscall.CALLDELIM)
-    regs = []
     for adata in args_data:
       if not adata:
         continue
@@ -64,15 +112,18 @@ class SysFuzzer:
       ret = optee_error.OpteeErrorCode.SUCCESS
       try:
         scall = self._syscalls[nr]
-        call = scall.create(adata)
-      except (KeyError, TypeError, IndexError):
+        call = self._create_syscall(scall, adata)
+      except (KeyError, TypeError, IndexError) as e:
         continue
       try:
-        call.load_args_to_mem(lambda a, d: self.load_args_to_mem(regs, a, d))
-        self._emu.syscall(call.NR, *call.args())
-        for r in regs:
-          self._emu.free_shm_region(r.id)
-        regs = []
+        call.load_args_to_mem(self._ops.loader_to_mem)
+        self._ops.syscall(call.NR, *call.args())
+        call.load_args_from_mem(self._ops.loader_from_mem)
+
+        if self._features == Feature.RESOURCE_SMART:
+          for key, value in call.args_out_resources():
+            self._resources[key] = value
+        self._ops.cleanup()
       except ta_error.TaPanicError as e:
         logging.error(e.message)
         ret = e.ret
@@ -83,4 +134,4 @@ class SysFuzzer:
     return ret
 
   def stop(self):
-    self._ta.exit(0)
+    self._ops.stop()
