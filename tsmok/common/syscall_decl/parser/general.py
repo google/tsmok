@@ -41,7 +41,7 @@ class SyscallTransformer(lark.Transformer):
     return s
 
   def syscallname(self, name):
-    return str(name).replace(' ', '_').strip('"\'')
+    return str(name).strip().replace(' ', '_').strip('"\'')
 
   def syscallnumber(self, val):
     return int(val)
@@ -50,7 +50,7 @@ class SyscallTransformer(lark.Transformer):
     return list(args)
 
   def argname(self, name):
-    return str(name).replace(' ', '_').strip('"\'')
+    return str(name).strip().replace(' ', '_').strip('"\'')
 
   def arg(self, name, atype):
     atype.name = name

@@ -19,7 +19,7 @@ class ArgTypeInfo:
 
   def __init__(self, atype=None, name='', options=None):
     self.atype = atype
-    self.name = name
+    self.name = name.strip()
     self.options = options or []
 
   def __call__(self, *args):
@@ -44,6 +44,8 @@ class Syscall:
   def __init__(self, *args):
     arg_list = list(args)
     self._args = []
+    self._args_dict = dict()
+    self._options_dict = dict()
     for info in self.ARGS_INFO:
       if arg_list:
         arg = info(arg_list.pop(0))
@@ -51,6 +53,20 @@ class Syscall:
         arg = info()
       setattr(self, arg.name, arg)
       self._args.append(arg)
+
+      # create different maps to make easy access to a specific argument
+      self._args_dict[arg.name] = arg
+      for op in arg.options:
+        if op not in self._options_dict:
+          self._options_dict[op] = [arg]
+        else:
+          self._options_dict[op].append(arg)
+
+  def arg_by_name(self, name):
+    return self._args_dict[name]
+
+  def args_by_options(self, op_name):
+    return self._options_dict[op_name]
 
   def load_args_to_mem(self, loader):
     if not callable(loader):
@@ -72,7 +88,7 @@ class Syscall:
   def args(self):
     return [a.arg() for a in self._args]
 
-  def args_resources_out(self):
+  def args_out_resources(self):
     for a in  self._args:
       if ArgFlags.RES_OUT in a.options:
         yield (a.name, a.value())
@@ -231,8 +247,10 @@ class Ptr(Arg):
   def arg(self):
     return self.addr
 
+  def reset(self):
+    self.addr = 0
+
   def load_to_mem(self, loader):
-    print('Load to mem for: ' + str(self))
     if not callable(loader):
       raise ValueError('loader argument is not a function')
     self.addr = loader(self.addr, bytes(self))
@@ -246,6 +264,21 @@ class Ptr(Arg):
     if self.addr:
       out += f': at 0x{self.addr:x}'
     return out
+
+
+class Array(Ptr):
+  """Base class for array type of arguments."""
+
+  def __init__(self, addr=0, size=0):
+    Ptr.__init__(self, addr)
+    self._size = size
+
+  def set_size(self, size):
+    self._size = size
+
+  def reset(self):
+    Ptr.reset(self)
+    self._size = 0
 
 
 class Int(Arg):
@@ -308,16 +341,13 @@ class Void(Arg):
     return 'Void ' + super().__str__()
 
 
-class VoidPtr(Ptr):
+class VoidPtr(Array):
   """'VOID *' argument for syscall."""
 
   def __init__(self, data=None):
-    super().__init__(0)
+    Array.__init__(self, 0, 0)
     self._data = data or b''
-    self._size = len(data)
-
-  def arg(self):
-    return self._data
+    self._size = len(self._data)
 
   def value(self):
     return self._data
@@ -330,20 +360,19 @@ class VoidPtr(Ptr):
     return data, len(data)
 
   def reset(self):
-    self._addr = 0
+    Array.reset(self)
     self._data = None
-    self._size = 0
 
   def __bytes__(self):
     return self._data
 
-  def set_size(self, size):
-    self._size = size
-
   def __str__(self):
     out = 'Void * ' + super().__str__()
     if self._data:
-      out += f' Data {self._data[:8].hex()}... '
+      if isinstance(self._data, bytes):
+        out += f' Data {self._data[:8].hex()}... '
+      else:
+        out += f' Data: {self._data}'
     return out
 
   def load_from_mem(self, loader):
