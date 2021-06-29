@@ -35,6 +35,8 @@ class OpteeArmEmu(arm.ArmEmu):
   EXIT_RETURN_ADDR = 0xFFFFFF00
 
   HYP_CNT_ID = 0
+  SYSCALL_MAX_ARGS = 8
+  SYSCALL_REG_ARGS = 4
 
   class AtfEntryCallType(enum.Enum):
     STD_SMC = 1
@@ -175,15 +177,16 @@ class OpteeArmEmu(arm.ArmEmu):
         sz = max(len(param.data), param.size)
       else:
         sz = param.size
-      region = self._nsec_memory_pool.allocate(sz)
-      self._log.debug('Allocate region %d for param %s: addr 0x%08x, '
-                      'size %d', region.id, param.attr, region.addr,
-                      region.size)
-      if param.data:
-        self.mem_write(region.addr, param.data)
-      param.shm_ref = region.id
-      param.addr = region.addr
-      param.size = sz
+      if sz:
+        region = self._nsec_memory_pool.allocate(sz)
+        self._log.debug('Allocate region %d for param %s: addr 0x%08x, '
+                        'size %d', region.id, param.attr, region.addr,
+                        region.size)
+        if param.data:
+          self.mem_write(region.addr, param.data)
+        param.shm_ref = region.id
+        param.addr = region.addr
+        param.size = sz
     elif isinstance(param, message.OpteeMsgParamRegMem):
       raise error.Error('message.OpteeMsgParamRegMem is not '
                         'supported for now')
@@ -704,28 +707,6 @@ class OpteeArmEmu(arm.ArmEmu):
     raise NotImplementedError('unregister_shared_memory is not implemented yet')
 
   # SYSCALLS
-  def syscall(self, sid, call, arg0, arg1, arg2, arg3, num_params=0,
-              base_addr=0):
-
-    self._svc_mode_setup()
-    self._thread_init()
-    self._push_session(sid)
-
-    try:
-      entry = self._vector[self.EntryCallType.SYSCALL]
-    except KeyError:
-      raise error.Error('Optee is not initialized')
-
-    if not entry:
-      raise error.Error('Optee is not initialized')
-
-    self.set_return_address(self.EXIT_RETURN_ADDR)
-    ret = self.call(entry, emu.RegContext(arg0, arg1, arg2, arg3, None,
-                                          base_addr, num_params, call))
-    self._push_session(sid)
-    self._thread_deinit()
-    return ret
-
   def _thread_init(self):
     self._log.debug('Init boot thread')
     self.set_return_address(self.EXIT_RETURN_ADDR)
@@ -746,13 +727,56 @@ class OpteeArmEmu(arm.ArmEmu):
     self.set_return_address(self.EXIT_RETURN_ADDR)
     return self.call(self.image.pop_session, emu.RegContext(sid, 0, 0, 0))
 
-  def _get_mem_for_args_from_session_id(self, sid, size):
+  def mem_region_from_session_id(self, sid):
     mem_info = self.image.get_mem_info_from_session_id(self, sid)
     for m in mem_info:
       if (m.perm & memory.MemAccessPermissions.RW ==
-          memory.MemAccessPermissions.RW and m.size >= size):
+          memory.MemAccessPermissions.RW):
         return m
     raise error.Error('Failed to get RW mem region from session id')
+
+  def _syscall(self, call, arg0=None, arg1=None, arg2=None, arg3=None,
+               num_params=0, base_addr=0):
+
+    try:
+      entry = self._vector[self.EntryCallType.SYSCALL]
+    except KeyError:
+      raise error.Error('Optee is not initialized')
+
+    if not entry:
+      raise error.Error('Optee is not initialized')
+
+    self.set_return_address(self.EXIT_RETURN_ADDR)
+    ret = self.call(entry, emu.RegContext(arg0, arg1, arg2, arg3, None,
+                                          base_addr, num_params, call))
+    return ret
+
+  def syscall_pre(self, sid):
+    self._svc_mode_setup()
+    self._thread_init()
+    self._push_session(sid)
+
+  def syscall_post(self, sid):
+    self._pop_session(sid)
+    self._thread_deinit()
+
+  def syscall(self, stack_allocator: region_allocator.RegionAllocator,
+              ncall, *args):
+    if len(args) > self.SYSCALL_MAX_ARGS:
+      raise ValueError('Wrong number of arguments')
+    region = None
+    base_addr = None
+    num_params = 0
+    if len(args) > self.SYSCALL_REG_ARGS:
+      num_params = len(args) - self.SYSCALL_REG_ARGS
+      fmt = f'<{num_params}I'
+      region = stack_allocator.allocate(struct.calcsize(fmt))
+      pdata = struct.pack(fmt, *args[self.SYSCALL_REG_ARGS:])
+      base_addr = region.addr
+      self.mem_write(base_addr, pdata)
+
+    self._syscall(ncall, *args[:self.SYSCALL_REG_ARGS], base_addr=base_addr,
+                  num_params=num_params)
 
   def log_syscall(self, sid: int, data: bytes, size: int = None):
     sz = len(data)
@@ -763,8 +787,13 @@ class OpteeArmEmu(arm.ArmEmu):
       raise NotImplementedError('Provided image is not direct call '
                                 'syscalls compliant')
 
-    mem = self._get_mem_for_args_from_session_id(sid, sz)
-    self.mem_write(mem.start, data[:sz])
-    ret = self.syscall(sid, syscalls.OpteeSysCall.LOG, mem.vaddr, sz,
-                       None, None)
+    mem_region = self.mem_region_from_session_id(sid)
+    mem_pool = region_allocator.RegionAllocator(
+        mem_region.start, mem_region.size, 4)
+    mreg = mem_pool.allocate(sz)
+    vaddr = mem_region.vaddr + (mreg.addr - mem_region.start)
+    self.mem_write(mreg.addr, data[:sz])
+    self.syscall_pre(sid)
+    ret = self.syscall(mem_pool, syscalls.OpteeSysCall.LOG, vaddr, sz)
+    self.syscall_post(sid)
     return ret
