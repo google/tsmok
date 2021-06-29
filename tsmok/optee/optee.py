@@ -218,7 +218,10 @@ class Optee:
     raise ta_base.TaPanicError(args[0], f'TA {ta.uuid} PANIC')
 
   def syscall_return(self, ta, args) -> optee_error.OpteeErrorCode:
-    ret = optee_error.OpteeErrorCode(args[0])
+    try:
+      ret = optee_error.OpteeErrorCode(args[0])
+    except ValueError:
+      ret = args[0]
     raise ta_error.TaExit(ret, f'TA Exit: ret code: {str(ret)}')
 
   # TEE_Result syscall_open_ta_session(const TEE_UUID *dest,
