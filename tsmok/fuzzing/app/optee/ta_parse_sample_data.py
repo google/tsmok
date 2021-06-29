@@ -80,9 +80,7 @@ def parse_data(syscalls, data):
   """
 
   args_data = data.split(sys_parser.Syscall.CALLDELIM)
-  print(len(args_data))
   for adata in args_data:
-    print(adata)
     if not adata:
       continue
     nr = sys_parser.Syscall.parse_call_number(adata)

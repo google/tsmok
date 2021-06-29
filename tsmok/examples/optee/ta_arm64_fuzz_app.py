@@ -15,12 +15,42 @@ import tsmok.optee.crypto as crypto_module
 import tsmok.optee.image_elf_ta as image_elf_ta
 import tsmok.optee.optee
 import tsmok.optee.rpmb_simple as rpmb_simple
-import tsmok.optee.syscall_parser as optee_parser
+import tsmok.optee.syscall_declarations as syscall_decl
 
 
 def sigint_handler(fuzzer, signum, frame):
   del signum, frame  # unused
   fuzzer.stop()
+
+
+class TaOps:
+  """Operation Context for TA fuzzing."""
+
+  def __init__(self, ta):
+    self._ta = ta
+    self._allocated_mem_regs = []
+
+  def get_ctx(self):
+    return fuzz.OpsCtx(self._ta.forkserver_start,
+                       self._ta.syscall,
+                       lambda: self._ta.exit(0),
+                       self._load_args_to_mem,
+                       self._ta.mem_read,
+                       self._cleanup)
+
+  def _load_args_to_mem(self, addr, data):
+    to_addr = addr
+    if not to_addr:
+      reg = self._ta.allocate_shm_region(len(data))
+      to_addr = reg.addr
+      self._allocated_mem_regs.append(reg)
+    self._ta.mem_write(to_addr, data)
+    return to_addr
+
+  def _cleanup(self):
+    for r in self._allocated_mem_regs:
+      self._ta.free_shm_region(r.id)
+      self._allocated_mem_regs.remove(r)
 
 
 # Run ROM
@@ -50,8 +80,7 @@ def run(args):
   log.setLevel(log_level)
 
   storage = rpmb_simple.StorageRpmbSimple(log_level=log_level)
-  tee = tsmok.optee.optee.Optee(extension=None,
-                                crypto_module=crypto_module.CryptoModule(),
+  tee = tsmok.optee.optee.Optee(crypto_module=crypto_module.CryptoModule(),
                                 log_level=log_level)
   tee.storage_add(storage)
 
@@ -59,13 +88,14 @@ def run(args):
   img = image_elf_ta.TaElfImage(args.binary)
   ta.load(img)
 
-  syscalls = dict()
-  for line in args.syscall_desc.read().splitlines():
-    call = optee_parser.parse(line)
-    syscalls[call.NR] = call
+  syscalls = syscall_decl.ta_syscall_types()
+
+  ta_ops = TaOps(ta)
 
   log.info('Run TA fuzzer')
-  fuzzer = fuzz.SysFuzzer(ta, syscalls, log_level=log_level)
+  fuzzer = fuzz.SysFuzzer(ta_ops.get_ctx(), syscalls,
+                          features=fuzz.Feature.RESOURCE_SMART,
+                          log_level=log_level)
   signal.signal(signal.SIGINT, lambda s, f: sigint_handler(fuzzer, s, f))
 
   if args.coverage:
@@ -109,9 +139,6 @@ def parse_args():
   parser.add_argument('--coverage', '-c', type=argparse.FileType('wb'),
                       required=False, default=None,
                       help='coverage file')
-  parser.add_argument('--syscall-desc', '-s', type=argparse.FileType('r'),
-                      required=True, default=None,
-                      help='Syscall description file')
   parser.add_argument('binary', type=argparse.FileType('rb'),
                       help='binary path')
   parser.add_argument('input_file', type=str,
