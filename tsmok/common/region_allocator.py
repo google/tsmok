@@ -20,7 +20,8 @@ class RegionAllocator:
     self.aligment = aligment
 
     self._free = portion.closedopen(addr, addr + size)
-    self._allocated = dict()
+    self._allocated_by_id = dict()
+    self._allocated_by_addr = dict()
 
   def _get_key(self, d: Dict[int, Any]) -> int:
     if not d:
@@ -63,25 +64,54 @@ class RegionAllocator:
       raise error.Error('RegionAllocator: failed to find free region for '
                         f'{size} bytes. Not enough space!')
 
-    region = Region(self._get_key(self._allocated),
+    region = Region(self._get_key(self._allocated_by_id),
                     addr, size)
     self._free -= portion.closedopen(addr, addr + size)
-    self._allocated[region.id] = region
+    self._allocated_by_id[region.id] = region
+    self._allocated_by_addr[region.addr] = region
     return region
 
-  def free(self, rid: int):
+  def free_by_id(self, rid: int):
     try:
-      region = self._allocated[rid]
+      region = self._allocated_by_id[rid]
     except KeyError:
       raise error.Error(f'RegionAllocator: unknown region id: {rid}')
 
     self._free |= portion.closedopen(region.addr, region.addr + region.size)
-    del self._allocated[rid]
+    del self._allocated_by_id[region.id]
+    del self._allocated_by_addr[region.addr]
 
-  def get(self, rid: int):
+  def free(self, addr: int):
     try:
-      region = self._allocated[rid]
+      region = self._allocated_by_addr[addr]
+    except KeyError:
+      raise error.Error(f'RegionAllocator: unknown region address: {addr}')
+
+    self._free |= portion.closedopen(region.addr, region.addr + region.size)
+    del self._allocated_by_id[region.id]
+    del self._allocated_by_addr[region.addr]
+
+  def get_by_id(self, rid: int):
+    try:
+      region = self._allocated_by_id[rid]
     except KeyError:
       raise error.Error(f'RegionAllocator: unknown region id: {rid}')
 
     return region
+
+  def get_by_addr(self, addr: int):
+    try:
+      region = self._allocated_by_addr[addr]
+    except KeyError:
+      raise error.Error(f'RegionAllocator: unknown region address: {addr}')
+
+    return region
+
+  def __str__(self):
+    out = f'Region Allocator: region 0x{self.addr:x} - '
+    out += f'0x{self.addr + self.size -1:x}\n'
+    out += '    allocated:\n'
+    for r in self._allocated_by_id.values():
+      out += f'     0x{r.addr:x} - 0x{r.addr + r.size - 1:x}\n'
+
+    return out
