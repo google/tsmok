@@ -70,6 +70,8 @@ class Emu(abc.ABC):
     VIRQ = 14
     VFIQ = 15
 
+  TAG_SIZE = 8
+
   def __init__(self, name, uc: unicorn.Uc, cs: capstone.Cs, log_level):
     abc.ABC.__init__(self)
 
@@ -477,6 +479,31 @@ class Emu(abc.ABC):
   def _svc_mode_setup(self):
     raise NotImplementedError()
 
+  def guarded_allocator_init(self, allocator):
+    self.mem_protect(allocator.addr, allocator.size,
+                     memory.MemAccessPermissions.N)
+
+  def guarded_allocator_allocate(self, allocator, size):
+    reg = allocator.allocate(size + self.TAG_SIZE * 2)
+    addr = reg.addr + self.TAG_SIZE
+    self.mem_protect(addr, size, memory.MemAccessPermissions.RW)
+    return addr, reg.id
+
+  def guarded_allocator_free(self, allocator, addr):
+    addr = addr - self.TAG_SIZE
+    reg = allocator.get_by_addr(addr)
+    self.mem_protect(reg.addr, reg.size, memory.MemAccessPermissions.N)
+    allocator.free(addr)
+
+  def guarded_allocator_free_by_id(self, allocator, rid):
+    reg = allocator.get_by_id(rid)
+    self.mem_protect(reg.addr, reg.size, memory.MemAccessPermissions.N)
+    allocator.free_by_id(rid)
+
+  def guarded_allocator_get_info_by_id(self, allocator, rid):
+    reg = allocator.get_by_id(rid)
+    return reg.addr + self.TAG_SIZE, reg.size - self.TAG_SIZE * 2
+
   def _format_addr_str(self, paddr: int, vaddr: int = None) -> str:
     """Convert virtual and physical addresses into string.
 
@@ -701,7 +728,8 @@ class Emu(abc.ABC):
     Args:
       addr: The start address of memory range
       size: The size of memory range
-      perm: memory range permissions.
+      perm: memory range permissions. Perm is ORed with permission of
+            existing memory regions in case of overlapping.
     """
     self._log.debug('Map region (in): 0x%x - 0x%x', addr,
                     addr + size - 1)
@@ -741,6 +769,11 @@ class Emu(abc.ABC):
       self._log.debug('Set permision to sub region: 0x%x - 0x%x: %s',
                       sub_addr, sub_addr + sub_size - 1, sub_perm)
       self._uc.mem_protect(sub_addr, sub_size, uc_perm)
+
+  def mem_protect(self, addr: int, size: int,
+                  perm: memory.MemAccessPermissions):
+    uc_perm = self._convert_perm_to_uc_prot(perm)
+    self._uc.mem_protect(addr, size, uc_perm)
 
   def load_to_mem(self, name: str, addr: int, data: bytes,
                   perm: memory.MemAccessPermissions) -> None:
