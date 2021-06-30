@@ -4,6 +4,7 @@ import enum
 
 
 class MemAccessPermissions(enum.IntFlag):
+  N = 0
   E = 1
   W = 2
   R = 4
