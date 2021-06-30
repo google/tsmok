@@ -34,6 +34,9 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     self.exception_handler[self.ExceptionType.SWI] = self.syscall_handler
     self._buffer_pool = region_allocator.RegionAllocator(
         self.BUFFER_PTR, self.BUFFER_SIZE)
+    self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
+                    memory.MemAccessPermissions.N)
+    self.guarded_allocator_init(self._buffer_pool)
 
   # Internal API
   # ==============================================
@@ -79,10 +82,9 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
   def _load_args_to_mem(self, regs, addr, data):
     to_addr = addr
     if not to_addr:
-      reg = self._buffer_pool.allocate(len(data))
-      to_addr = reg.addr
-      if regs:
-        regs.append(reg)
+      to_addr = self.allocate_shm_region(len(data))
+      if regs is not None:
+        regs.append(to_addr)
     self.mem_write(to_addr, data)
     return to_addr
 
@@ -100,10 +102,11 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
     return ret
 
   def allocate_shm_region(self, size):
-    return self._buffer_pool.allocate(size)
+    addr, _ = self.guarded_allocator_allocate(self._buffer_pool, size)
+    return addr
 
-  def free_shm_region(self, rid):
-    return self._buffer_pool.free(rid)
+  def free_shm_region(self, addr):
+    self.guarded_allocator_free(self._buffer_pool, addr)
 
   def reset(self):
     self.stack_reset()
@@ -116,8 +119,6 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
 
     self.uuid = image.uuid
     self.set_stack(self.STACK_PTR, image.stack_size)
-    self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
-                    memory.MemAccessPermissions.RW)
 
   def open_session(
       self, sid: int,
@@ -135,8 +136,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
       param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
-    for reg in regs:
-      self._buffer_pool.free(reg.id)
+    for addr in regs:
+      self.free_shm_region(addr)
     return ret, params
 
   def invoke_command(
@@ -155,8 +156,8 @@ class TaArmEmu(arm.ArmEmu, ta_base.Ta):
       param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
-    for reg in regs:
-      self._buffer_pool.free(reg.id)
+    for addr in regs:
+      self.free_shm_region(addr)
     return ret, params
 
   def close_session(self, sid: int):

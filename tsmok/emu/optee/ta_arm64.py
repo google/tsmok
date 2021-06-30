@@ -35,6 +35,9 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
     self.exception_handler[self.ExceptionType.SWI] = self.syscall_handler
     self._buffer_pool = region_allocator.RegionAllocator(
         self.BUFFER_PTR, self.BUFFER_SIZE)
+    self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
+                    memory.MemAccessPermissions.N)
+    self.guarded_allocator_init(self._buffer_pool)
 
   # Internal API
   # ==============================================
@@ -95,13 +98,12 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
 
     return args
 
-  def _load_arg_to_mem(self, regs, addr, data):
+  def _load_args_to_mem(self, regs, addr, data):
     to_addr = addr
     if not to_addr:
-      reg = self._buffer_pool.allocate(len(data))
-      to_addr = reg.addr
-      if regs:
-        regs.append(reg)
+      to_addr = self.allocate_shm_region(len(data))
+      if regs is not None:
+        regs.append(to_addr)
     self.mem_write(to_addr, data)
     return to_addr
 
@@ -119,10 +121,11 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
     return ret
 
   def allocate_shm_region(self, size):
-    return self._buffer_pool.allocate(size)
+    addr, _ = self.guarded_allocator_allocate(self._buffer_pool, size)
+    return addr
 
-  def free_shm_region(self, rid):
-    return self._buffer_pool.free(rid)
+  def free_shm_region(self, addr):
+    self.guarded_allocator_free(self._buffer_pool, addr)
 
   def reset(self):
     self.stack_reset()
@@ -135,8 +138,6 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
 
     self.uuid = image.uuid
     self.set_stack(self.STACK_PTR, image.stack_size)
-    self.map_memory(self.BUFFER_PTR, self.BUFFER_SIZE,
-                    memory.MemAccessPermissions.RW)
 
   def loader_from_mem(self, addr, size):
     return self.mem_read(addr, size)
@@ -146,22 +147,19 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
       params: List[utee_args.OpteeUteeParam]
       ) -> Tuple[optee_error.OpteeErrorCode, List[utee_args.OpteeUteeParam]]:
     self._log.info('Open Session: id %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     regs = []
     param_arg = utee_args.OpteeUteeParamArgs(params)
     addr = param_arg.load_to_mem(
-        lambda a, d: self._load_arg_to_mem(regs, a, d), None)
-    ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeTaCall.OPEN_SESSION,
-                                   sid, addr, 0))
+        lambda a, d: self._load_args_to_mem(regs, a, d), None)
+    ret = self.syscall(syscalls.OpteeTaCall.OPEN_SESSION, sid, addr, 0)
 
     if ret == optee_error.OpteeErrorCode.SUCCESS:
       param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
-    for reg in regs:
-      self._buffer_pool.free(reg.id)
+    for addr in regs:
+      self.free_shm_region(addr)
 
     return ret, params
 
@@ -170,29 +168,22 @@ class TaArm64Emu(arm64.Arm64Emu, ta_base.Ta):
       params: List[utee_args.OpteeUteeParam]
       ) -> Tuple[optee_error.OpteeErrorCode, List[utee_args.OpteeUteeParam]]:
     self._log.info('Invoke Command: id %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
 
     regs = []
     param_arg = utee_args.OpteeUteeParamArgs(params)
     addr = param_arg.load_to_mem(
-        lambda a, d: self._load_arg_to_mem(regs, a, d), None)
+        lambda a, d: self._load_args_to_mem(regs, a, d), None)
     self._log.info('Invoke command %s', cmd)
-    ret = self.call(self.image.entry_point,
-                    emu.RegContext(syscalls.OpteeTaCall.INVOKE_COMMAND,
-                                   sid, addr, cmd))
+    ret = self.syscall(syscalls.OpteeTaCall.INVOKE_COMMAND, sid, addr, cmd)
     if ret == optee_error.OpteeErrorCode.SUCCESS:
       param_arg.load_from_mem(self.mem_read, addr)
       params = param_arg.params
 
-    for reg in regs:
-      self._buffer_pool.free(reg.id)
+    for addr in regs:
+      self.free_shm_region(addr)
 
     return ret, params
 
   def close_session(self, sid: int):
     self._log.info('Close Session: sid %d', sid)
-    self.mem_clean(self.BUFFER_PTR, self.BUFFER_SIZE)
-
-    return self.call(self.image.entry_point,
-                     emu.RegContext(syscalls.OpteeTaCall.CLOSE_SESSION,
-                                    sid, 0, 0))
+    return self.syscall(syscalls.OpteeTaCall.CLOSE_SESSION, sid, 0, 0)

@@ -205,7 +205,7 @@ class TrustyArm64Emu(arm64.Arm64Emu):
     self._log.debug('IPC Init: ret 0x%x', ret)
     if ret != trusty_smc.SmcError.SUCCESS:
       self._atf.mem_reclaim(eid)
-      self._shared_memory_pool.free(mem_region.id)
+      self._shared_memory_pool.free(mem_region.addr)
       raise error.Error(f'Failed to Init IPC. Error 0x{ret:x}')
 
     return trusty_ipc.IpcHandler(client_id, ver, mem_region, eid)
@@ -391,6 +391,6 @@ class TrustyArm64Emu(arm64.Arm64Emu):
       raise error.Error(f'Failed to shutdown IPC. Error 0x{ret:x}')
 
     self._atf.mem_reclaim(ipc.mem_obj_id)
-    self._shared_memory_pool.free(ipc.shm_mem.id)
+    self._shared_memory_pool.free(ipc.shm_mem.addr)
 
     ipc = trusty_ipc.IpcHandler()

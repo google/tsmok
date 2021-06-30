@@ -171,22 +171,23 @@ class OpteeArmEmu(arm.ArmEmu):
 
     return args
 
-  def _param_to_memory(self, param: message.OpteeMsgParam):
+  def _param_to_memory(self, alloc_regions, param: message.OpteeMsgParam):
     if isinstance(param, message.OpteeMsgParamTempMem):
       if param.data:
         sz = max(len(param.data), param.size)
       else:
         sz = param.size
       if sz:
-        region = self._nsec_memory_pool.allocate(sz)
+        addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool, sz)
         self._log.debug('Allocate region %d for param %s: addr 0x%08x, '
-                        'size %d', region.id, param.attr, region.addr,
-                        region.size)
+                        'size %d', rid, param.attr, addr,
+                        sz)
         if param.data:
-          self.mem_write(region.addr, param.data)
-        param.shm_ref = region.id
-        param.addr = region.addr
+          self.mem_write(addr, param.data)
+        param.shm_ref = rid
+        param.addr = addr
         param.size = sz
+        alloc_regions.append(addr)
     elif isinstance(param, message.OpteeMsgParamRegMem):
       raise error.Error('message.OpteeMsgParamRegMem is not '
                         'supported for now')
@@ -320,8 +321,8 @@ class OpteeArmEmu(arm.ArmEmu):
 
     sz = msg_arg.params[0].b
 
-    reg = self._nsec_memory_pool.allocate(sz)
-    prm = message.OpteeMsgParamTempMemOutput(reg.addr, sz, reg.id)
+    addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool, sz)
+    prm = message.OpteeMsgParamTempMemOutput(addr, sz, rid)
     msg_arg.params = []
     msg_arg.params.append(prm)
 
@@ -337,7 +338,7 @@ class OpteeArmEmu(arm.ArmEmu):
       return bytes(msg_arg)
 
     shm_id = msg_arg.params[0].b
-    self._nsec_memory_pool.free(shm_id)
+    self.guarded_allocator_free_by_id(self._nsec_memory_pool, shm_id)
     msg_arg.params = []
     msg_arg.ret = optee_error.OpteeErrorCode.SUCCESS
     return bytes(msg_arg)
@@ -358,34 +359,36 @@ class OpteeArmEmu(arm.ArmEmu):
     if not self._ret1:
       return (0,)
 
-    reg = self._nsec_memory_pool.allocate(self._ret1)
+    addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool,
+                                                self._ret1)
 
-    return ((reg.addr >> 32) & 0xFFFFFFFF, reg.addr & 0xFFFFFFFF, 0,
-            (reg.id >> 32) & 0xFFFFFFFF, reg.id & 0xFFFFFFFF)
+    return ((addr >> 32) & 0xFFFFFFFF, addr & 0xFFFFFFFF, 0,
+            (rid >> 32) & 0xFFFFFFFF, rid & 0xFFFFFFFF)
 
   def _rpc_free(self):
     shm_id = self._ret1 << 32 | self._ret2
     self._log.info('RPC Free: shared ragion ID %d', shm_id)
-    self._nsec_memory_pool.free(shm_id)
+    self.guarded_allocator_free_by_id(self._nsec_memory_pool, shm_id)
     return (0,)
 
   def _rpc_cmd(self):
     shm_id = self._ret1 << 32 | self._ret2
     self._log.info('RPC CMD: shared ragion ID %d', shm_id)
-    reg = self._nsec_memory_pool.get(shm_id)
-    self._log.debug('RPC CMD: SHM addr 0x%08x, size %d', reg.addr, reg.size)
+    addr, sz = self.guarded_allocator_get_info_by_id(self._nsec_memory_pool,
+                                                     shm_id)
+    self._log.debug('RPC CMD: SHM addr 0x%08x, size %d', addr, sz)
 
-    data = self.mem_read(reg.addr, reg.size)
+    data = self.mem_read(addr, sz)
     msg_arg = message.OpteeMsgArg(data)
 
     try:
       self._log.info('RPC CMD: %s',
                      message.OpteeMsgRpcCmdType(msg_arg.cmd))
       data = self._rpc_cmd_handlers[msg_arg.cmd](msg_arg)
-      if reg.size < len(data):
+      if sz < len(data):
         raise error.Error('Shared Memory size is too small')
 
-      self.mem_write(reg.addr, data)
+      self.mem_write(addr, data)
       return (0,)
     except KeyError:
       raise error.Error('Unsupported RPC CMD request: '
@@ -522,6 +525,7 @@ class OpteeArmEmu(arm.ArmEmu):
     cfg = self.get_shm_config()
     self._nsec_memory_pool = region_allocator.RegionAllocator(
         cfg.addr, cfg.size, self.MEMORY_ALIGNMENT)
+    self.guarded_allocator_init(self._nsec_memory_pool)
 
   # ATF side calls
   def fast_smc(self, args: emu.RegContext):
@@ -604,33 +608,38 @@ class OpteeArmEmu(arm.ArmEmu):
 
     arg.params.append(uuid_param)
     arg.params.append(client)
+    allocated_regions = []
     for param in params:
-      arg.params.append(self._param_to_memory(param))
+      arg.params.append(self._param_to_memory(allocated_regions, param))
 
-    reg = self._nsec_memory_pool.allocate(arg.size())
+    sz = arg.size()
+    addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool, sz)
+    allocated_regions.append(addr)
     self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
-                    'size %d', reg.id, reg.addr, reg.size)
-    self.mem_write(reg.addr, bytes(arg))
-    arg.shm_ref = reg.id
+                    'size %d', rid, addr, sz)
+    self.mem_write(addr, bytes(arg))
+    arg.shm_ref = rid
 
     regs = emu.RegContext(optee_smc.OpteeSmcMsgFunc.CALL_WITH_ARG,
-                          (reg.addr >> 32) & 0xFFFFFFFF,
-                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+                          (addr >> 32) & 0xFFFFFFFF,
+                          (addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
 
     ret = self.std_smc(regs)
     if optee_smc.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
-    ret_data = self.mem_read(reg.addr, reg.size)
+    ret_data = self.mem_read(addr, sz)
     arg = message.OpteeMsgArg(ret_data)
 
-    self._nsec_memory_pool.free(reg.id)
     if arg.ret != optee_smc.OpteeSmcReturn.OK:
       self._log.error('OpenSession failed with error 0x%08x, origin 0x%08x',
                       arg.ret, arg.ret_origin)
     else:
       for param in arg.params:
         self._param_from_memory(param)
+
+    for addr in allocated_regions:
+      self.guarded_allocator_free(self._nsec_memory_pool, addr)
 
     return arg.ret, arg.session, self._convert_to_utee_params(arg.params)
 
@@ -640,27 +649,29 @@ class OpteeArmEmu(arm.ArmEmu):
     arg.session = session
     arg.func = cmd
 
+    allocated_regions = []
     for param in self._convert_from_utee_params(utee_params):
-      arg.params.append(self._param_to_memory(param))
+      arg.params.append(self._param_to_memory(allocated_regions, param))
 
-    reg = self._nsec_memory_pool.allocate(arg.size())
+    sz = arg.size()
+    addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool, sz)
+    allocated_regions.append(addr)
     self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
-                    'size %d', reg.id, reg.addr, reg.size)
-    self.mem_write(reg.addr, bytes(arg))
-    arg.shm_ref = reg.id
+                    'size %d', rid, addr, sz)
+    self.mem_write(addr, bytes(arg))
+    arg.shm_ref = rid
 
     regs = emu.RegContext(optee_smc.OpteeSmcMsgFunc.CALL_WITH_ARG,
-                          (reg.addr >> 32) & 0xFFFFFFFF,
-                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+                          (addr >> 32) & 0xFFFFFFFF,
+                          (addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
 
     ret = self.std_smc(regs)
     if optee_smc.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
-    ret_data = self.mem_read(reg.addr, reg.size)
+    ret_data = self.mem_read(addr, sz)
     arg = message.OpteeMsgArg(ret_data)
 
-    self._nsec_memory_pool.free(reg.id)
     if arg.ret != optee_smc.OpteeSmcReturn.OK:
       self._log.error('Invoke Command failed with error 0x%08x, origin 0x%08x',
                       arg.ret, arg.ret_origin)
@@ -668,30 +679,34 @@ class OpteeArmEmu(arm.ArmEmu):
       for param in arg.params:
         self._param_from_memory(param)
 
+    for addr in allocated_regions:
+      self.guarded_allocator_free(self._nsec_memory_pool, addr)
+
     return arg.ret, self._convert_to_utee_params(arg.params)
 
   def close_session(self, session: int):
     arg = message.OpteeMsgArg(message.OpteeMsgCmd.CLOSE_SESSION)
     arg.session = session
 
-    reg = self._nsec_memory_pool.allocate(arg.size())
+    sz = arg.size()
+    addr, rid = self.guarded_allocator_allocate(self._nsec_memory_pool, sz)
     self._log.debug('Allocate region %d for OpteeMsgArg: addr 0x%08x, '
-                    'size %d', reg.id, reg.addr, reg.size)
-    self.mem_write(reg.addr, bytes(arg))
-    arg.shm_ref = reg.id
+                    'size %d', rid, addr, sz)
+    self.mem_write(addr, bytes(arg))
+    arg.shm_ref = rid
 
     regs = emu.RegContext(optee_smc.OpteeSmcMsgFunc.CALL_WITH_ARG,
-                          (reg.addr >> 32) & 0xFFFFFFFF,
-                          (reg.addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
+                          (addr >> 32) & 0xFFFFFFFF,
+                          (addr & 0xFFFFFFFF), 0, 0, 0, self.HYP_CNT_ID)
 
     ret = self.std_smc(regs)
     if optee_smc.OpteeSmcReturn.is_rpc(ret[0]):
       self._rpc_process()
 
-    ret_data = self.mem_read(reg.addr, reg.size)
+    ret_data = self.mem_read(addr, sz)
     arg = message.OpteeMsgArg(ret_data)
 
-    self._nsec_memory_pool.free(reg.id)
+    self.guarded_allocator_free(self._nsec_memory_pool, addr)
     if arg.ret != optee_smc.OpteeSmcReturn.OK:
       self._log.error('Close Command failed with error 0x%08x, origin 0x%08x',
                       arg.ret, arg.ret_origin)
@@ -777,6 +792,8 @@ class OpteeArmEmu(arm.ArmEmu):
 
     self._syscall(ncall, *args[:self.SYSCALL_REG_ARGS], base_addr=base_addr,
                   num_params=num_params)
+    if region:
+      stack_allocator.free(region.addr)
 
   def log_syscall(self, sid: int, data: bytes, size: int = None):
     sz = len(data)
