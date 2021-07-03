@@ -1,6 +1,9 @@
 """ELF binary image."""
 
+import collections
+import enum
 import io
+import struct
 
 import elftools.elf.constants as elf_const
 import elftools.elf.elffile as elf_file
@@ -11,11 +14,51 @@ import tsmok.common.image as image_base
 import tsmok.common.memory as memory
 
 
+RelocationRule = collections.namedtuple('RelocationRule', ['fmt', 'calc'])
+
+
+class RelType(enum.IntFlag):
+  AARCH64_ABS64 = 257
+  AARCH64_ABS32 = 258
+  AARCH64_RELATIVE = 1027
+  ARM_ABS32 = 2
+  ARM_REL32 = 3
+  ARM_RELATIVE = 23
+
+
 class ElfImage(image_base.Image):
   """ELF Binary Image."""
 
   def __init__(self, image: io.BufferedReader, load_addr: int):
+    self._rel_rules = {
+        'ARM': {
+            RelType.ARM_ABS32:
+                RelocationRule('I', self._rel_calc_value_plus_sym),
+            RelType.ARM_RELATIVE:
+                RelocationRule('I', self._rel_calc_value),
+        },
+        'AArch64': {
+            RelType.AARCH64_ABS64:
+                RelocationRule('Q', self._rel_calc_value_plus_sym_plus_addend),
+            RelType.AARCH64_RELATIVE:
+                RelocationRule('Q', self._rel_calc_value_plus_addend),
+        },
+    }
+
     image_base.Image.__init__(self, image, load_addr)
+
+  def _rel_calc_value(self, value, sym_value, offset, addend=0):
+    return value + self.load_offset
+
+  def _rel_calc_value_plus_sym(self, value, sym_value, offset, addend=0):
+    return value + self.load_offset + sym_value
+
+  def _rel_calc_value_plus_addend(self, value, sym_value, offset, addend=0):
+    return value + self.load_offset + addend
+
+  def _rel_calc_value_plus_sym_plus_addend(self, value, sym_value, offset,
+                                           addend=0):
+    return value + self.load_offset + sym_value + addend
 
   def _symbols(self):
     symbol_tables = [
@@ -49,6 +92,39 @@ class ElfImage(image_base.Image):
 
     return perm
 
+  def _get_region(self, addr):
+    for r in self.mem_regions:
+      if r.start <= addr <= r.start + r.size:
+        return r
+    return None
+
+  def _relocate(self, sec, regions):
+    rules = self._rel_rules[self._elf.get_machine_arch()]
+    sym_sec = self._elf.get_section(sec['sh_link'])
+
+    for rel in sec.iter_relocations():
+      where = self.load_offset + rel['r_offset']
+      rule = rules[rel['r_info_type']]
+
+      memr = self._get_region(where)
+      if not memr:
+        raise ValueError(f'Offset {rel["r_offset"]:x} is not belong '
+                         'to any segment')
+
+      off = where - memr.start
+      sz = struct.calcsize(rule.fmt)
+      value = struct.unpack(rule.fmt, memr.data[off:off+sz])[0]
+      sym_value = sym_sec.get_symbol(rel['r_info_sym'])['st_value']
+      try:
+        addend = rel['r_addend']
+      except KeyError:
+        # no r_addend
+        addend = 0
+      new_value = rule.calc(value, sym_value, rel['r_offset'], addend)
+      data = bytearray(memr.data)
+      data[off:off + sz] = struct.pack(rule.fmt, new_value)
+      memr.data = bytes(data)
+
   def _load_segments(self, load_addr: int):
 
     # If there are numbers of segments, `load_addr' is corresponding
@@ -62,9 +138,12 @@ class ElfImage(image_base.Image):
       min_addr = None
       for i, seg in enumerate(self._elf.iter_segments()):
         if seg['p_type'] == 'PT_LOAD':
-          if not min_addr or seg['p_paddr'] < min_addr:
+          if min_addr is None or seg['p_paddr'] < min_addr:
             min_addr = seg['p_paddr']
-      self.load_offset = min_addr - load_addr
+      if min_addr > load_addr:
+        self.load_offset = -(min_addr - load_addr)
+      else:
+        self.load_offset = load_addr - min_addr
 
     for i, seg in enumerate(self._elf.iter_segments()):
       if seg['p_type'] == 'PT_LOAD':
@@ -83,7 +162,11 @@ class ElfImage(image_base.Image):
         perm = self._convert_flags_to_perm(seg['p_flags'])
         self.mem_regions.append(
             memory.MemoryRegionData(f'load_segment {i}',
-                                    paddr - self.load_offset, data, perm))
+                                    paddr + self.load_offset, data, perm))
+
+    for sec in self._elf.iter_sections():
+      if sec['sh_type'] in ['SHT_REL', 'SHT_RELA']:
+        self._relocate(sec, self.mem_regions)
 
   def _convert_vaddr_to_paddr(self, addr: int)-> int:
     sec = None
@@ -102,7 +185,7 @@ class ElfImage(image_base.Image):
         vaddr = seg['p_vaddr']
         paddr = seg['p_paddr']
         off = addr - vaddr
-        return paddr + off - self.load_offset
+        return paddr + off + self.load_offset
 
     raise error.Error('Section {section_name} is not belong to any segment')
 
@@ -134,6 +217,10 @@ class ElfImage(image_base.Image):
 
   def _load(self, image: io.BufferedReader, load_addr: int) -> None:
     self._elf = elf_file.ELFFile(image)
+    if self._elf.get_machine_arch() not in ['ARM', 'AArch64']:
+      raise ValueError('Unsupported machine type '
+                       f'{self._elf.get_machine_arch()}')
+
     self._load_func_symbols()
     self._load_segments(load_addr)
     self._parse_sections(image)
