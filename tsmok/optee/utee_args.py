@@ -61,8 +61,13 @@ class OpteeUteeParamArgs:
       for i, p in enumerate(self.params):
         if isinstance(p, OpteeUteeParamMemref):
           data = p.data
-          if p.size and not data:
-            data = b'\x00' * p.size
+          if p.size:
+            if not data:
+              data = b'\x00' * p.size
+            elif p.size > len(data):
+              data += b'\x00' * (p.size - len(data))
+            else:
+              data = data[:p.size]
           if data:
             p.addr = loader(p.addr, data)
             if not p.size:
