@@ -41,6 +41,8 @@ class TaFuzzer:
   PARAM_INT_FMT = '<2I'
   PARAM_BUFFER_FMT = '<I'
 
+  OPTEE_NUM_PARAMS = 4
+
   class Mode(enum.Enum):
     OPEN_SESSION = 1,
     INVOKE_COMMAND = 2,
@@ -132,7 +134,7 @@ class TaFuzzer:
 
     offset = sz
     param_list = []
-    for i in range(utee_args.OPTEE_NUM_PARAMS):
+    for i in range(self.OPTEE_NUM_PARAMS):
       try:
         t = utee_args.OpteeUteeParamType((types >> (i * 4)) & 0x7)
       except ValueError:
