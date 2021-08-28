@@ -12,10 +12,12 @@ import tsmok.coverage.drcov as cov_drcov
 import tsmok.emu.optee.ta_arm64 as ta_arm64
 import tsmok.fuzzing.sys_fuzzer as fuzz
 import tsmok.optee.crypto as crypto_module
+import tsmok.optee.fuzzing.ta_fuzz as ta_fuzz
 import tsmok.optee.image_elf_ta as image_elf_ta
 import tsmok.optee.optee
 import tsmok.optee.rpmb_simple as rpmb_simple
 import tsmok.optee.syscall_declarations as syscall_decl
+import tsmok.optee.syscalls as optee_syscalls
 
 
 def sigint_handler(fuzzer, signum, frame):
@@ -23,34 +25,25 @@ def sigint_handler(fuzzer, signum, frame):
   fuzzer.stop()
 
 
-class TaOps:
-  """Operation Context for TA fuzzing."""
+class TaExampleFuzzOps(ta_fuzz.TaFuzzingOps):
+  """Ops for TA fuzzing."""
 
-  def __init__(self, ta):
-    self._ta = ta
-    self._allocated_mem_regs = []
+  def __init__(self):
+    ta_fuzz.TaFuzzingOps.__init__(self)
 
-  def get_ctx(self):
-    return fuzz.OpsCtx(self._ta.forkserver_start,
-                       self._ta.syscall,
-                       lambda: self._ta.exit(0),
-                       self._load_args_to_mem,
-                       self._ta.mem_read,
-                       self._cleanup)
+    # limit cmd only to 0 and 1 for invoke_command
+    self._nr_arg_handler[optee_syscalls.OpteeTaCall.INVOKE_COMMAND]['cmd'] = \
+        self._invoke_cmd_filter
 
-  def _load_args_to_mem(self, addr, data):
-    to_addr = addr
-    if not to_addr:
-      reg = self._ta.allocate_shm_region(len(data))
-      to_addr = reg.addr
-      self._allocated_mem_regs.append(reg)
-    self._ta.mem_write(to_addr, data)
-    return to_addr
+  def _invoke_cmd_filter(self, value):
+    return value % 2
 
-  def _cleanup(self):
-    for r in self._allocated_mem_regs:
-      self._ta.free_shm_region(r.id)
-      self._allocated_mem_regs.remove(r)
+
+def syscall_filter(syscalls):
+  filtered_syscalls = dict()
+  filtered_syscalls[optee_syscalls.OpteeTaCall.INVOKE_COMMAND] = \
+      syscalls[optee_syscalls.OpteeTaCall.INVOKE_COMMAND]
+  return filtered_syscalls
 
 
 # Run ROM
@@ -89,14 +82,21 @@ def run(args):
   ta.load(img)
 
   syscalls = syscall_decl.ta_syscall_types()
+  # interested in fuzzing only INVOKE_COMMAND,
+  # thus filter out other syscalls.
+  syscalls = syscall_filter(syscalls)
 
-  ta_ops = TaOps(ta)
+  sid = 1
+  ta.open_session(sid, [])
+
+  ta_ops = ta_fuzz.TaExampleFuzzOps(ta)
 
   log.info('Run TA fuzzer')
   fuzzer = fuzz.SysFuzzer(ta_ops.get_ctx(), syscalls,
                           features=fuzz.Feature.RESOURCE_SMART,
                           log_level=log_level)
   signal.signal(signal.SIGINT, lambda s, f: sigint_handler(fuzzer, s, f))
+  fuzzer.resource_add_value('cmd', sid)
 
   if args.coverage:
     cov = cov_drcov.DrCov(log_level=log_level)

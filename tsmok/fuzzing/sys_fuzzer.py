@@ -16,8 +16,8 @@ class Feature(enum.IntFlag):
 
 
 OpsCtx = collections.namedtuple(
-    'CallbackCtx', ['init', 'syscall', 'stop', 'loader_to_mem',
-                    'loader_from_mem', 'cleanup'])
+    'CallbackCtx', ['init', 'syscall', 'stop', 'arg_value_checker',
+                    'loader_to_mem', 'loader_from_mem', 'cleanup'])
 
 
 class SysFuzzer:
@@ -31,6 +31,18 @@ class SysFuzzer:
     self._syscalls = syscalls or dict()
     self._resources = dict()
     self._ops = ops
+
+  def resource_add_value(self, name, value):
+    if name in self._resources:
+      self.log.warning('Resource %s already exist (value: %s). Overwrite it.',
+                       name, self._resources[name])
+    self._resources[name] = value
+
+  def resource_clean(self, name):
+    try:
+      del self._resources[name]
+    except KeyError:
+      pass
 
   def init(self):
     """Starts AFL forkserver.
@@ -83,6 +95,8 @@ class SysFuzzer:
 
       try:
         val = cls.parse_arg_value(info, args_data.pop(0))
+        if self._ops.arg_value_checker:
+          self._ops.arg_value_checker(cls.NR, info.name, val)
         values.append(val)
         if syscall.ArgFlags.ARRAY in info.options:
           arrays[info.name] = val

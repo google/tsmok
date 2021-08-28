@@ -2,8 +2,6 @@
 
 import enum
 import logging
-import os
-import signal
 import struct
 
 import tsmok.common.error as error
@@ -12,26 +10,7 @@ import tsmok.optee.error as optee_error
 import tsmok.optee.utee_args as utee_args
 
 
-def convert_error_to_crash(exc):
-  """Converts *Error exception to application crash with corresponding signal.
-
-  This function should be called to indicate to AFL that a crash occurred
-  during emulation.
-
-  Args:
-    exc: tsmok.common.error.*Error exception
-  """
-  if isinstance(exc, error.SegfaultError):
-    os.kill(os.getpid(), signal.SIGSEGV)
-  if isinstance(exc, error.SigIllError):
-    # Invalid instruction - throw SIGILL
-    os.kill(os.getpid(), signal.SIGILL)
-  else:
-    # Not sure what happened - throw SIGABRT
-    os.kill(os.getpid(), signal.SIGABRT)
-
-
-class TaFuzzer:
+class TaSimpleFuzzer:
   """AFLPlusPlus compatible TA fuzzer wrapper."""
 
   SESSION_ID = 1
