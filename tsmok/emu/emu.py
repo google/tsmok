@@ -4,7 +4,6 @@ import abc
 import collections
 import enum
 import logging
-import math
 import struct
 import capstone
 import portion
@@ -734,7 +733,7 @@ class Emu(abc.ABC):
     self._log.debug('Map region (in): 0x%x - 0x%x', addr,
                     addr + size - 1)
 
-    addr_fixed = math.floor(addr / const.PAGE_SIZE) * const.PAGE_SIZE
+    addr_fixed = addr & ~(const.PAGE_SIZE - 1)
     size_fixed = round_up.round_up(size + addr - addr_fixed, const.PAGE_SIZE)
 
     self._log.debug('Map region (fixed): 0x%x - 0x%x', addr_fixed,

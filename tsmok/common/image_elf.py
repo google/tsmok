@@ -164,9 +164,10 @@ class ElfImage(image_base.Image):
             memory.MemoryRegionData(f'load_segment {i}',
                                     paddr + self.load_offset, data, perm))
 
-    for sec in self._elf.iter_sections():
-      if sec['sh_type'] in ['SHT_REL', 'SHT_RELA']:
-        self._relocate(sec, self.mem_regions)
+    if load_addr:
+      for sec in self._elf.iter_sections():
+        if sec['sh_type'] in ['SHT_REL', 'SHT_RELA']:
+          self._relocate(sec, self.mem_regions)
 
   def _convert_vaddr_to_paddr(self, addr: int)-> int:
     sec = None
