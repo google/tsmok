@@ -1,22 +1,22 @@
-# TSMOK
-**T**ester and **S**ecurity researcher fir**M**ware emulat**O**r **K**it - **TSMOK** (pronounce [[(t)smok]](https://en.wikipedia.org/wiki/Slavic_dragon)) is a tool to emulate firmware for testing and research purpose. **TSMOK** is based on [Unicorn](https://www.unicorn-engine.org/) engine.
+# About
+**TSMOK** (pronounce [[(t)smok]](https://en.wikipedia.org/wiki/Slavic_dragon)) is a tool to emulate firmware for testing and research purpose. **TSMOK** is based on [Unicorn](https://www.unicorn-engine.org/) engine.
 
 # Features
 * Modular structure.
-* Supports OPTEE OS, OPTEE TA, Trusty OS and Pigweed ARM ELF binaries.
-* Fake ATF, OPTEE and HW components implementations.
-* Python OPTEE instance has simple implementation of RPMB storage.
+* Supports OPTEE OS, OPTEE TA, Trusty OS, and Pigweed ARM ELF binaries.
+* Fake ATF, OPTEE, and HW components implementations.
+* Python OPTEE instance has a simple implementation of RPMB storage.
 * FF-A support
 * MMU support
 * **TSMOK** tracks:
-	* execution flow (instruction, function and syscalls)
+	* execution flow (instruction, function, and syscalls)
 	* memory access
 	* syscall access
 	* Mem/Reg control and examination
 * Coverage support (gcov, lcov) base on disasm and ELF DWARF
 * AFL support for fuzzing(AFL has instrumentation for Unicorn engine).
 * OPTEE TA fuzzing support
-* Extensibility: easy to add new fake HW component support or new tracking/analyzing feature.
+* Extensibility: easy to add new fake HW component support or new tracking/analyzing features.
 
 # Area of usage
 * Testing: tests(unit/functional) with about any complexity can be written.
@@ -38,23 +38,6 @@
 ### Fuzzing
 [AFLPlusPlus](https://github.com/AFLplusplus) is requeired for fuzzing. **AFLPlusPlus** installation instruction can be found on its page.
 
-### Set pylint commit hook
-This is needed to do code style check before every commit.
-
-#####Install git dependency
-
-`pip3 install git-pylint-commit-hook`
-
-#####Install hook
-
-`cat > .git/hooks/pre-commit << EOD`
-
-`#!/bin/sh`
-
-`git-pylint-commit-hook`
-
-`EOD`
-
 # Examples
 ### Pigweed binary run
 `python3 -m tsmok.example.pw_app -b <path/to/binary> -v`
@@ -75,11 +58,8 @@ les/trusty/trusty-os.elf -v`
 # Contributers
 Dmitry Yatsushkevich <dmitryya@google.com>
 
-# TODO
-* Fuzzing for OPTEE, Trusty(?)
-* Individual Trusty TA support (?)
-* GDB remote client support
-* Performance optimization
-* Coverage support improvements
-* Add RPMB FS support
+## Disclaimer
 
+This project is not an official Google project. It is not supported by
+Google and Google specifically disclaims all warranties as to its quality,
+merchantability, or fitness for a particular purpose.
