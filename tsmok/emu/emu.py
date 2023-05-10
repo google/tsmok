@@ -640,7 +640,7 @@ class Emu(abc.ABC):
     Raises:
       ValueError in case of error.
     """
-    if not isinstance(interval, portion.interval.Interval):
+    if not isinstance(interval, portion.Interval):
       raise ValueError()
     if interval.empty:
       raise ValueError()
